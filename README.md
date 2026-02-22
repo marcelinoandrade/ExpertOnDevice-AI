@@ -144,6 +144,49 @@ Não fique preso a um único fornecedor. Mude de IA **sem recompilar o firmware*
 
 ---
 
+## 🧠 Expert-on-Device — O Conceito que Muda Tudo
+
+<div align="center">
+
+![Expert-on-Device — Assistente físico multicontextual com perfis profissionais nativos](imagens/Expert_on_Device.jpeg)
+
+</div>
+
+O **Expert-on-Device** é a ideia central que diferencia este projeto de um simples "botãozinho que chama o ChatGPT".
+
+Em vez de um assistente genérico, o dispositivo **muda de comportamento** de acordo com o perfil selecionado pelo usuário — como trocar de especialista na palma da mão:
+
+| Perfil | O dispositivo se comporta como... | Exemplo de uso |
+|---|---|---|
+| 🌾 **Agro** | Agrônomo de campo | *"Quais os melhores nutrientes para o tomate?"* — responde com dosagem, época, sintomas visuais |
+| 🎓 **Professor** | Tutor personalizado | *"Explica fotossíntese"* — adapta a linguagem para o nível do aluno |
+| 🗂️ **Reunião** | Secretário executivo | *"Resume o que foi decidido"* — transcreve e sintetiza em bullet points |
+| ⚙️ **Engenheiro** | Especialista técnico | *"O que é este componente?"* (foto) — identifica e descreve especificações |
+| 🩺 **Saúde** | Auxiliar clínico | *"Registra: paciente relata dor há 3 dias"* — formata para prontuário |
+| 🔧 **Geral** | Assistente polivalente | Uso cotidiano sem contexto específico |
+
+### Por que isso é revolucionário?
+
+> Hoje, um médico paga U$500/mês por um app de transcrição. Um agrônomo voa horas para dar um diagnóstico de campo. Um engenheiro abre manuais de 800 páginas para identificar uma falha.
+>
+> **Com U$33 de hardware e este firmware, qualquer profissional carrega o especialista no bolso — offline, sem assinatura, sem câmeras enviando dados para a nuvem.**
+
+### Como os perfis funcionam tecnicamente
+
+Os perfis são **system prompts** armazenados no `settings.json` do SD card, carregados dynamicamente na inicialização. Trocar de perfil = trocar o contexto do modelo — **sem recompilar o firmware**.
+
+```json
+{
+  "ai": {
+    "personality": "Você é um agrônomo especializado em horticultura tropical..."
+  }
+}
+```
+
+Quer um perfil totalmente customizado para o seu negócio? É só editar o `settings.json` — ou configurar via Captive Portal diretamente no campo.
+
+---
+
 ## ⚡ Início Rápido (5 minutos)
 
 ### Pré-requisitos
