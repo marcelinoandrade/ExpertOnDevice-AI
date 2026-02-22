@@ -15,7 +15,9 @@
 
 > **"O menor assistente de IA com câmera do mundo — e você pode construir um hoje."**
 
-📹 *[Adicione aqui um GIF/vídeo de 15s mostrando o dispositivo analisando uma peça pela câmera e respondendo por voz — esse é o gancho que viraliza!]*
+
+<video src="imagens/video_p4_01.mp4" controls width="100%" style="max-width:720px; border-radius:12px"></video>
+
 
 </div>
 
