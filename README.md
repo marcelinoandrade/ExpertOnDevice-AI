@@ -2,7 +2,7 @@
 
 # 🤖 ESP32 AI Assistant
 
-### *Transforme um chip de U$5 em um Assistente de IA com Visão por Câmera — Sem Nuvem Proprietária, Sem Assinatura Mensal, 100% Seu.*
+### *Transforme um microcontrolador em um Assistente de IA com Visão por Câmera — Sem Nuvem Proprietária, Sem Assinatura Mensal, 100% Seu.*
 
 [![License: Non-Commercial](https://img.shields.io/badge/License-Non--Commercial%20Gratuito-blue.svg)](LICENSE)
 [![Commercial License](https://img.shields.io/badge/Licença%20Comercial-Solicitar-brightgreen.svg)](mailto:mrclnndrd@gmail.com)
@@ -25,7 +25,7 @@
 
 | | ✅ ESP32 AI Assistant | ❌ Soluções Típicas |
 |---|---|---|
-| 💰 Custo do hardware | **Menos de U$30** | U$200 a U$2.000+ |
+| 💰 Custo do hardware | **U$33 (P4-EYE no DigiKey) ou U$20 (S3)** | U$200 a U$2.000+ |
 | 🌐 Servidor próprio | **Não precisa** | Obrigatório |
 | 🤖 Modelo de IA | **Agnóstico** (GPT, Claude, Llama, Gemini, local) | Preso a 1 fornecedor |
 | 📷 Visão Computacional | **Sim — câmera 2MP embarcada** | Raramente |
@@ -96,7 +96,7 @@ Não fique preso a um único fornecedor. Mude de IA **sem recompilar o firmware*
 
 </div>
 
-**Hardware:** Qualquer ESP32-S3 com microfone — disponível por **menos de U$10**
+**Hardware:** Qualquer ESP32-S3 com microfone — kits completos a partir de **~U$20**
 
 - 🔋 Perfeito para alimentação por bateria (durações de dias)
 - 👕 **Tamanho ideal para wearables**: smartwatch, crachá, óculos inteligentes
@@ -147,12 +147,12 @@ Não fique preso a um único fornecedor. Mude de IA **sem recompilar o firmware*
 - Hardware: **ESP32-P4-EYE** ou qualquer placa **ESP32-S3** com microfone
 - Conta em qualquer provedor de IA com API REST (OpenAI, Anthropic, Groq...)
 
-### 🛒 Onde comprar o hardware
-| Hardware | Link | Preço médio |
+| Hardware | Onde comprar | Preço (referência) |
 |---|---|---|
-| ESP32-P4-EYE | [AliExpress](https://aliexpress.com) / [Mouser](https://mouser.com) | ~U$30 |
-| ESP32-S3 DevKit | [AliExpress](https://aliexpress.com) | ~U$5-10 |
-| Microfone INMP441 (para S3) | [AliExpress](https://aliexpress.com) | ~U$2 |
+| **ESP32-P4-EYE** (versão PRO) | [DigiKey](https://www.digikey.com/en/products/detail/espressif-systems/ESP32-P4-EYE/26648584) / [AliExpress Oficial](https://www.aliexpress.com/item/1005007989949885.html) | **~U$33** (DigiKey) / **~U$50** (AliExpress) |
+| **ESP32-S3 DevKit com mic** | [AliExpress](https://aliexpress.com) | **~U$20–35** (varia por modelo) |
+| **ESP32-S3-BOX-3** (Espressif) | [DigiKey](https://www.digikey.com) / [Mouser](https://mouser.com) | **~U$40** (display + mic + speaker inclído) |
+| Microfone INMP441 (add-on S3) | [AliExpress](https://aliexpress.com) | **~U$2–5** |
 
 ### 1. Clone e configure
 ```bash
