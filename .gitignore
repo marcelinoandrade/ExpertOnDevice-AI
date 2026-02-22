@@ -1,0 +1,54 @@
+# =============================================================
+#  Assistente de IA — ESP32 Project
+#  .gitignore raiz
+#
+#  Projetos de firmware:
+#    firmware/esp32_p4_firmware/  ← ESP32-P4-EYE (versão completa)
+#    firmware/esp32_s3_firmware/  ← ESP32-S3     (versão simples)
+# =============================================================
+
+# ----- ESP-IDF build artifacts -----
+build/
+sdkconfig
+sdkconfig.old
+managed_components/
+dependencies.lock
+
+# ----- Cache e arquivos de IDE -----
+.cache/
+.clangd
+*.cache
+.vscode/
+.idea/
+
+# ----- Logs de desenvolvimento -----
+*.log
+*.log.err
+*.out.log
+*.err.log
+e2e_*.log
+gui_check*.log
+monitor_*.log
+
+# ----- Pasta p4/ — exemplos e docs de referência da Espressif -----
+# Grandes (>12k arquivos), todos públicos em github.com/espressif
+p4/
+
+# ----- Pasta s3/ — documentação antiga de referência -----
+# PDFs e ESP-IDF samples não pertencem ao repositório de código
+s3/
+
+# ----- Credenciais hardcoded -----
+# O arquivo secret.h contém tokens e senhas reais — nunca commitar!
+**/secret.h
+
+# ----- SD card settings (contêm tokens reais em produção) -----
+# Apenas o template é versionado; o arquivo real do usuário fica no SD
+**/sd_card_template/data/settings.json
+
+# ----- Arquivos temporários do sistema -----
+*.tmp
+*.bak
+Thumbs.db
+.DS_Store
+

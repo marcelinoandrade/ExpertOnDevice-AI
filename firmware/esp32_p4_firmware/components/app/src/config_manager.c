@@ -1,0 +1,246 @@
+#include "config_manager.h"
+
+#include <errno.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
+
+#include "cJSON.h"
+#include "esp_heap_caps.h"
+#include "esp_log.h"
+
+#include "secret.h" /* fallback: SECRET_WIFI_SSID, SECRET_OPENAI_API_KEY, etc. */
+
+static const char *TAG = "config_mgr";
+
+#define SETTINGS_PATH "/sdcard/data/settings.json"
+#define SETTINGS_DIR "/sdcard/data"
+#define JSON_READ_BUF_CAP                                                      \
+  (8 * 1024) /* 8 KB — alinhado a pior caso razoável                        \
+              */
+
+/* -----------------------------------------------------------------------
+ * Singleton — valores default (fallback quando settings.json não existe)
+ * ----------------------------------------------------------------------- */
+static app_config_t s_config = {
+    .wifi_ssid = SECRET_WIFI_SSID,
+    .wifi_pass = SECRET_WIFI_PASS,
+    .ai_token = SECRET_OPENAI_API_KEY,
+    /* ai_personality inicializada em config_manager_load() se não houver JSON
+     */
+    .ai_personality = "",
+    .volume = 70,
+    .brightness = 85,
+    .loaded = false,
+};
+
+/* Personalidade padrão usada quando o JSON não contém o campo */
+static const char *s_default_personality =
+    "Voce e um assistente inteligente e conciso.";
+
+app_config_t *config_manager_get(void) { return &s_config; }
+
+/* -----------------------------------------------------------------------
+ * Helpers internos
+ * ----------------------------------------------------------------------- */
+static void safe_copy(char *dst, size_t dst_max, const cJSON *item) {
+  if (cJSON_IsString(item) && item->valuestring) {
+    strlcpy(dst, item->valuestring, dst_max);
+  }
+}
+
+static bool dir_exists(const char *path) {
+  struct stat st = {0};
+  return (stat(path, &st) == 0 && S_ISDIR(st.st_mode));
+}
+
+/* -----------------------------------------------------------------------
+ * config_manager_load
+ * ----------------------------------------------------------------------- */
+esp_err_t config_manager_load(void) {
+  /* Verifica se o arquivo existe */
+  struct stat st = {0};
+  if (stat(SETTINGS_PATH, &st) != 0) {
+    ESP_LOGW(TAG, "settings.json not found (%s) — using fallback values",
+             SETTINGS_PATH);
+    /* Garante que o campo de personalidade tenha o valor padrão */
+    if (s_config.ai_personality[0] == '\0') {
+      strlcpy(s_config.ai_personality, s_default_personality,
+              sizeof(s_config.ai_personality));
+    }
+    return ESP_ERR_NOT_FOUND;
+  }
+
+  if (st.st_size == 0 || st.st_size > JSON_READ_BUF_CAP) {
+    ESP_LOGW(TAG, "settings.json has unexpected size %ld — skipping",
+             (long)st.st_size);
+    return ESP_ERR_INVALID_SIZE;
+  }
+
+  /* Aloca buffer em PSRAM para não pressionar a DRAM */
+  char *buf = (char *)heap_caps_malloc(JSON_READ_BUF_CAP,
+                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!buf) {
+    /* Fallback: DRAM */
+    buf = (char *)malloc(JSON_READ_BUF_CAP);
+  }
+  if (!buf) {
+    ESP_LOGE(TAG, "Failed to allocate JSON read buffer");
+    return ESP_ERR_NO_MEM;
+  }
+
+  FILE *f = fopen(SETTINGS_PATH, "r");
+  if (!f) {
+    free(buf);
+    ESP_LOGE(TAG, "fopen failed: %s (errno %d)", SETTINGS_PATH, errno);
+    return ESP_FAIL;
+  }
+
+  size_t read_len = fread(buf, 1, JSON_READ_BUF_CAP - 1, f);
+  fclose(f);
+  buf[read_len] = '\0';
+
+  if (read_len == 0) {
+    free(buf);
+    ESP_LOGW(TAG, "settings.json is empty — using fallback values");
+    return ESP_ERR_NOT_FOUND;
+  }
+
+  /* Parse JSON */
+  cJSON *root = cJSON_ParseWithLength(buf, read_len);
+  free(buf);
+
+  if (!root) {
+    const char *err = cJSON_GetErrorPtr();
+    ESP_LOGE(TAG, "JSON parse error near: %s", err ? err : "(unknown)");
+    return ESP_FAIL;
+  }
+
+  /* wifi */
+  const cJSON *wifi = cJSON_GetObjectItemCaseSensitive(root, "wifi");
+  if (wifi) {
+    safe_copy(s_config.wifi_ssid, sizeof(s_config.wifi_ssid),
+              cJSON_GetObjectItemCaseSensitive(wifi, "ssid"));
+    safe_copy(s_config.wifi_pass, sizeof(s_config.wifi_pass),
+              cJSON_GetObjectItemCaseSensitive(wifi, "password"));
+  }
+
+  /* ai */
+  const cJSON *ai = cJSON_GetObjectItemCaseSensitive(root, "ai");
+  if (ai) {
+    safe_copy(s_config.ai_token, sizeof(s_config.ai_token),
+              cJSON_GetObjectItemCaseSensitive(ai, "token"));
+    const cJSON *pers = cJSON_GetObjectItemCaseSensitive(ai, "personality");
+    if (cJSON_IsString(pers) && pers->valuestring && pers->valuestring[0]) {
+      strlcpy(s_config.ai_personality, pers->valuestring,
+              sizeof(s_config.ai_personality));
+    } else {
+      strlcpy(s_config.ai_personality, s_default_personality,
+              sizeof(s_config.ai_personality));
+    }
+  }
+
+  /* hardware */
+  const cJSON *hw = cJSON_GetObjectItemCaseSensitive(root, "hardware");
+  if (hw) {
+    const cJSON *vol = cJSON_GetObjectItemCaseSensitive(hw, "volume");
+    const cJSON *bri = cJSON_GetObjectItemCaseSensitive(hw, "brightness");
+    if (cJSON_IsNumber(vol)) {
+      s_config.volume = (uint8_t)vol->valueint;
+    }
+    if (cJSON_IsNumber(bri)) {
+      s_config.brightness = (uint8_t)bri->valueint;
+    }
+  }
+
+  cJSON_Delete(root);
+
+  s_config.loaded = true;
+  ESP_LOGI(TAG, "Configuration loaded: SSID='%s', volume=%d, brightness=%d",
+           s_config.wifi_ssid, s_config.volume, s_config.brightness);
+  return ESP_OK;
+}
+
+/* -----------------------------------------------------------------------
+ * config_manager_save
+ * ----------------------------------------------------------------------- */
+esp_err_t config_manager_save(void) {
+  /* Garante que o diretório /sdcard/data existe */
+  if (!dir_exists(SETTINGS_DIR)) {
+    if (mkdir(SETTINGS_DIR, 0755) != 0) {
+      ESP_LOGE(TAG, "mkdir(%s) failed (errno %d)", SETTINGS_DIR, errno);
+      return ESP_FAIL;
+    }
+  }
+
+  cJSON *root = cJSON_CreateObject();
+  if (!root)
+    return ESP_ERR_NO_MEM;
+
+  /* wifi */
+  cJSON *wifi = cJSON_CreateObject();
+  cJSON_AddStringToObject(wifi, "ssid", s_config.wifi_ssid);
+  cJSON_AddStringToObject(wifi, "password", s_config.wifi_pass);
+  cJSON_AddItemToObject(root, "wifi", wifi);
+
+  /* ai */
+  cJSON *ai = cJSON_CreateObject();
+  cJSON_AddStringToObject(ai, "token", s_config.ai_token);
+  cJSON_AddStringToObject(ai, "personality", s_config.ai_personality);
+  cJSON_AddItemToObject(root, "ai", ai);
+
+  /* hardware */
+  cJSON *hw = cJSON_CreateObject();
+  cJSON_AddNumberToObject(hw, "volume", s_config.volume);
+  cJSON_AddNumberToObject(hw, "brightness", s_config.brightness);
+  cJSON_AddItemToObject(root, "hardware", hw);
+
+  char *json_str = cJSON_PrintUnformatted(root);
+  cJSON_Delete(root);
+
+  if (!json_str) {
+    ESP_LOGE(TAG, "cJSON_PrintUnformatted returned NULL");
+    return ESP_ERR_NO_MEM;
+  }
+
+  FILE *f = fopen(SETTINGS_PATH, "w");
+  if (!f) {
+    cJSON_free(json_str);
+    ESP_LOGE(TAG, "fopen(%s, w) failed (errno %d)", SETTINGS_PATH, errno);
+    return ESP_FAIL;
+  }
+
+  size_t json_len = strlen(json_str);
+  size_t written = fwrite(json_str, 1, json_len, f);
+  fclose(f);
+  cJSON_free(json_str);
+
+  if (written != json_len) {
+    ESP_LOGE(TAG, "Incomplete write to settings.json (%u/%u bytes)",
+             (unsigned)written, (unsigned)json_len);
+    return ESP_FAIL;
+  }
+
+  ESP_LOGI(TAG, "Configuration saved to %s (%u bytes)", SETTINGS_PATH,
+           (unsigned)json_len);
+  return ESP_OK;
+}
+
+/* -----------------------------------------------------------------------
+ * config_manager_update_and_save
+ * ----------------------------------------------------------------------- */
+esp_err_t config_manager_update_and_save(const char *ssid, const char *pass,
+                                         const char *ai_token,
+                                         const char *ai_personality) {
+  if (ssid)
+    strlcpy(s_config.wifi_ssid, ssid, sizeof(s_config.wifi_ssid));
+  if (pass)
+    strlcpy(s_config.wifi_pass, pass, sizeof(s_config.wifi_pass));
+  if (ai_token)
+    strlcpy(s_config.ai_token, ai_token, sizeof(s_config.ai_token));
+  if (ai_personality)
+    strlcpy(s_config.ai_personality, ai_personality,
+            sizeof(s_config.ai_personality));
+  s_config.loaded = true;
+  return config_manager_save();
+}

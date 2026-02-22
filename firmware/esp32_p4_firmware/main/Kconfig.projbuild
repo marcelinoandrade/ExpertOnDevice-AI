@@ -1,0 +1,33 @@
+menu "Assistant Test Options"
+
+    config APP_MINIMAL_HOSTED_LINK_TEST
+        bool "Run minimal ESP-Hosted link test (host <-> C6)"
+        default n
+        help
+            Starts only ESP-Hosted transport and tries to query C6 coprocessor
+            firmware version. This isolates SDIO link issues from Wi-Fi setup.
+
+    config APP_MINIMAL_HOSTED_WIFI_TEST
+        bool "Run minimal ESP-Hosted Wi-Fi test app"
+        default n
+        help
+            Starts only netif/event loop/Wi-Fi STA flow to validate C6 hosted
+            connectivity path without BSP, GUI and assistant pipeline.
+
+    config APP_TEST_WIFI_SSID
+        string "Test Wi-Fi SSID"
+        default "myssid"
+        depends on APP_MINIMAL_HOSTED_WIFI_TEST
+
+    config APP_TEST_WIFI_PASSWORD
+        string "Test Wi-Fi Password"
+        default "mypassword"
+        depends on APP_MINIMAL_HOSTED_WIFI_TEST
+
+    config APP_TEST_WIFI_MAX_RETRY
+        int "Test Wi-Fi max retries"
+        default 5
+        range 1 30
+        depends on APP_MINIMAL_HOSTED_WIFI_TEST
+
+endmenu

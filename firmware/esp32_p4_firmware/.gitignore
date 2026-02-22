@@ -1,0 +1,26 @@
+# =============================================================
+#  firmware/esp32_assistant_p4 — .gitignore local
+# =============================================================
+
+# ----- ESP-IDF build artifacts -----
+build/
+sdkconfig
+sdkconfig.old
+managed_components/
+
+# ----- Cache do clangd (específico de máquina) -----
+.cache/
+.clangd
+
+# ----- Logs de desenvolvimento gerados durante testes -----
+*.log
+*.err.log
+*.out.log
+e2e_capture.log
+e2e_monitor.err.log
+e2e_monitor.out.log
+gui_check*.log
+monitor_*.log
+
+# ----- Credenciais — NUNCA versionar! -----
+components/bsp/include/secret.h

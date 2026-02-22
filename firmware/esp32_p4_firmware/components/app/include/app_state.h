@@ -1,0 +1,11 @@
+#pragma once
+
+typedef enum {
+    APP_STATE_IDLE = 0,
+    APP_STATE_SELECTING_MODE,
+    APP_STATE_LISTENING,
+    APP_STATE_TRANSCRIBING,
+    APP_STATE_THINKING,
+    APP_STATE_SHOWING_RESPONSE,
+    APP_STATE_ERROR,
+} app_state_t;
