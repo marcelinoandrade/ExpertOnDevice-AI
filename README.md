@@ -31,12 +31,12 @@
 |---|---|---|
 | 💰 Custo do hardware | **U$33 (P4-EYE no DigiKey) ou U$20 (S3)** | U$200 a U$2.000+ |
 | 🌐 Servidor próprio | **Não precisa** | Obrigatório |
-| 🤖 Modelo de IA | **Agnóstico** (GPT, Claude, Llama, Gemini, local) | Preso a 1 fornecedor |
+| 🤖 Modelo de IA | **Configurável** via settings.json (OpenAI, Claude, Groq — endpoint customizável) | Preso a 1 fornecedor |
 | 📷 Visão Computacional | **Sim — câmera 2MP embarcada** | Raramente |
 | 🎙️ Processamento de Voz | **Tempo real, edge** | Nuvem obrigatória |
 | 🔐 **Privacidade dos dados** | **Processamento local (on-premise)** | Dados em servidores de terceiros |
 | 🔋 Consumo de energia | **Ultra baixo** | Alto |
-| 👕 **Wearable** | **✅ Cabia no pulso** | ❌ Impossível |
+| 👕 **Wearable** | **✅ Versão S3** é compacta o suficiente | ❌ Impossível |
 | 📦 Tamanho | **Menor que um baralho** | Desktop ou servidor |
 
 ---
@@ -154,7 +154,7 @@ Não fique preso a um único fornecedor. Mude de IA **sem recompilar o firmware*
 
 O **Expert-on-Device** é a ideia central que diferencia este projeto de um simples "botãozinho que chama o ChatGPT".
 
-Em vez de um assistente genérico, o dispositivo **muda de comportamento** de acordo com o perfil selecionado pelo usuário — como trocar de especialista na palma da mão:
+Em vez de um assistente genérico, o dispositivo **muda de comportamento** de acordo com o perfil configurado — como ter um especialista dedicado para cada contexto de uso:
 
 | Perfil | O dispositivo se comporta como... | Exemplo de uso |
 |---|---|---|
@@ -169,11 +169,11 @@ Em vez de um assistente genérico, o dispositivo **muda de comportamento** de ac
 
 > Hoje, um médico paga U$500/mês por um app de transcrição. Um agrônomo voa horas para dar um diagnóstico de campo. Um engenheiro abre manuais de 800 páginas para identificar uma falha.
 >
-> **Com U$33 de hardware e este firmware, qualquer profissional carrega o especialista no bolso — offline, sem assinatura, sem câmeras enviando dados para a nuvem.**
+> **Com U$33 de hardware e este firmware, qualquer profissional carrega o especialista no bolso — sem assinatura de plataforma, sem câmeras enviando imagens para servidores de terceiros.**
 
 ### Como os perfis funcionam tecnicamente
 
-Os perfis são **system prompts** armazenados no `settings.json` do SD card, carregados dynamicamente na inicialização. Trocar de perfil = trocar o contexto do modelo — **sem recompilar o firmware**.
+Os perfis são **system prompts** armazenados no `settings.json` do SD card, carregados na inicialização. Trocar de perfil = editar o campo `ai.personality` e reiniciar — **sem recompilar o firmware**.
 
 ```json
 {
@@ -203,7 +203,7 @@ Quer um perfil totalmente customizado para o seu negócio? É só editar o `sett
 
 ### 1. Clone e configure
 ```bash
-git clone https://github.com/seu-usuario/assistente-de-IA.git
+git clone https://github.com/marcelinoandrade/assistente-de-IA.git
 cd assistente-de-IA
 
 # Copie o template de credenciais
@@ -329,7 +329,8 @@ Usuário → [Voz + Foto opcional]
 
 - [x] Push-to-talk com encoder rotativo
 - [x] Modo **Voz** (somente áudio) e **Foto+Voz** (câmera + áudio simultâneos)
-- [x] **LLM agnóstico**: OpenAI, Claude, Groq, Ollama, qualquer API REST
+- [x] **Token e personalidade** configuráveis via `settings.json` (sem recompilar)
+- [ ] **URL de endpoint customizável** por LLM (Claude, Groq, Ollama) — *em desenvolvimento*
 - [x] 3 perfis de especialista (Geral, Agrônomo, Engenheiro)
 - [x] **Captive Portal**: configura Wi-Fi e LLM via browser (sem recompilar)
 - [x] `config_manager`: lê `settings.json` do SD na inicialização
