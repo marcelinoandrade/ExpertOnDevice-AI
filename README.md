@@ -16,7 +16,9 @@
 > **"O menor assistente de IA com câmera do mundo — e você pode construir um hoje."**
 
 
-<video src="imagens/video_p4_01.mp4" controls width="100%" style="max-width:720px; border-radius:12px"></video>
+<video src="imagens/video_p4_01.mp4" controls width="720">
+  <a href="imagens/video_p4_01.mp4">▶ Ver demonstração em vídeo</a>
+</video>
 
 
 </div>
