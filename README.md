@@ -31,7 +31,7 @@
 |---|---|---|
 | 💰 Custo do hardware | **U$33 (P4-EYE no DigiKey) ou U$20 (S3)** | U$200 a U$2.000+ |
 | 🌐 Servidor próprio | **Não precisa** | Obrigatório |
-| 🤖 Modelo de IA | **Configurável** via settings.json (OpenAI, Claude, Groq — endpoint customizável) | Preso a 1 fornecedor |
+| 🤖 Modelo de IA | **Agnóstico** (troca via recompilação; JSON dinâmico em roadmap) | Preso a 1 fornecedor |
 | 📷 Visão Computacional | **Sim — câmera 2MP embarcada** | Raramente |
 | 🎙️ Processamento de Voz | **Tempo real, edge** | Nuvem obrigatória |
 | 🔐 **Privacidade dos dados** | **Processamento local (on-premise)** | Dados em servidores de terceiros |
@@ -350,6 +350,7 @@ Usuário → [Voz + Foto opcional]
 - [ ] Wake word local (sem botão) — *planejado*
 - [ ] App BLE companion — *planejado*
 - [ ] Histórico de conversa (multi-turn) — *planejado*
+- [ ] **OTA (Over-The-Air)** — atualização de firmware pelo ar via Wi-Fi, sem cabo USB — *planejado*
 
 ---
 
@@ -410,8 +411,10 @@ git push origin feature/wake-word-local
 ```
 
 Áreas onde contribuições são especialmente bem-vindas:
+- 🤖 **Testar com outras LLMs** (Claude, Groq, Ollama) e reportar compatibilidade
+- 🔗 **Implementar `base_url` dinâmico** no cliente HTTP (elimina recompilação para trocar de LLM)
+- 📡 **OTA (Over-The-Air)**: atualização de firmware pelo ar via Wi-Fi — sem precisar de cabo USB em campo
 - 🔊 TTS (síntese de voz local)
-- 🛜 Suporte a mais provedores de LLM
 - 📱 App companion (BLE/Wi-Fi)
 - 🌍 Traduções do README
 
