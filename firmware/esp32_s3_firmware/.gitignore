@@ -1,3 +1,21 @@
+# =============================================================
+#  firmware/esp32_s3_firmware — .gitignore local
+# =============================================================
+
+# ----- ESP-IDF build artifacts -----
 build/
 sdkconfig
+sdkconfig.old
 managed_components/
+
+# ----- Cache do clangd (específico de máquina) -----
+.cache/
+.clangd
+
+# ----- Logs de desenvolvimento -----
+*.log
+*.err.log
+*.out.log
+
+# ----- Credenciais — NUNCA versionar! -----
+components/bsp/include/secret.h
