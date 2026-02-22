@@ -194,6 +194,18 @@ Quer um perfil totalmente customizado para o seu negócio? É só editar o `sett
 
 ---
 
+## 🚀 O Firmware como "Cérebro" Portável
+
+A arquitetura modular do projeto permite que a mesma lógica — captura de mídia, orquestração de IA e gestão de perfis — seja embarcada em diferentes form factors:
+
+- **👓 Óculos Inteligentes** — ESP32-S3 embarcado processa o que o usuário vê em tempo real, respondendo por áudio. Ideal para o perfil Engenheiro em manutenção industrial com mãos livres.
+- **⌚ Smartwatch / Wearables** — o baixo consumo e tamanho reduzido do S3 permitem dispositivos vestíveis para saúde ou segurança, com Edge AI diretamente no pulso.
+- **⛑️ Capacetes e EPI Inteligentes** — o perfil "Expert" integrado a um capacete de obra pode identificar riscos por foto e alertar o trabalhador via áudio local, sem depender de rede.
+
+> O hardware muda. O firmware permanece o mesmo.
+
+---
+
 ## ⚡ Início Rápido (5 minutos)
 
 ### Pré-requisitos
