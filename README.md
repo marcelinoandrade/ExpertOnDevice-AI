@@ -7,7 +7,7 @@
 [![License: Non-Commercial](https://img.shields.io/badge/License-Non--Commercial%20Gratuito-blue.svg)](LICENSE)
 [![Commercial License](https://img.shields.io/badge/Licença%20Comercial-Solicitar-brightgreen.svg)](mailto:mrclnndrd@gmail.com)
 [![ESP-IDF](https://img.shields.io/badge/ESP--IDF-v5.5.1-red.svg)](https://github.com/espressif/esp-idf)
-[![LLM Agnostic](https://img.shields.io/badge/LLM-Agnóstico%20(GPT%20%7C%20Claude%20%7C%20Llama)-purple.svg)]()
+[![LLM](https://img.shields.io/badge/LLM-OpenAI%20%7C%20Claude%20%7C%20Groq%20(roadmap)-purple.svg)]()
 [![Platform](https://img.shields.io/badge/Platform-ESP32--P4%20%7C%20ESP32--S3-orange.svg)]()
 [![Made in Brazil](https://img.shields.io/badge/Made%20in-Brazil%20🇧🇷-green.svg)]()
 
@@ -41,29 +41,36 @@
 
 ---
 
-## � Liberdade Total de Modelo (LLM Agnóstico)
+## 🔓 Arquitetura Aberta — LLM Agnóstico
 
-Não fique preso a um único fornecedor. Mude de IA **sem recompilar o firmware** — apenas editando o `settings.json` no SD card ou via Captive Portal.
+> **Estado atual:** o projeto **já é agnóstico de LLM** — basta alterar a URL e o modelo no `secret.h` e recompilar para usar Claude, Groq, Llama ou qualquer provedor com API REST compatível.
+> 
+> **Roadmap:** eliminar a necessidade de recompilação. O `token` e a `personality` já mudam via `settings.json` sem recompilar. O suporte a `base_url` e `model` dinâmicos via JSON **está em desenvolvimento**.
+
+A arquitetura do firmware foi desenhada para suportar qualquer provedor via API REST. Quando implementado, bastará editar o `settings.json`:
 
 ```json
 {
   "ai": {
-    "base_url": "https://api.openai.com/v1",
-    "model":    "gpt-4o",
-    "token":    "sk-..."
+    "base_url": "https://api.anthropic.com/v1",
+    "model":    "claude-3-5-sonnet",
+    "token":    "sk-ant-...",
+    "personality": "Você é um especialista técnico..."
   }
 }
 ```
 
-| Provedor | base_url | Modelos populares | Por que usar |
+| Provedor | base_url planejada | Modelos alvo | Diferencial |
 |---|---|---|---|
-| **OpenAI** | `api.openai.com/v1` | `gpt-4o`, `gpt-4o-mini` | Melhor custo-benefício geral |
-| **Anthropic** | `api.anthropic.com/v1` | `claude-3-5-sonnet`, `claude-opus-4` | Raciocínio técnico superior, ideal para modo Especialista |
-| **Groq** | `api.groq.com/openai/v1` | `llama-3-70b`, `mixtral-8x7b` | **Latência ultra-baixa** — respostas em < 1s |
-| **OpenRouter** | `openrouter.ai/api/v1` | Todos os modelos acima | Uma chave, todos os modelos |
-| **🏠 Local (Ollama)** | `seu-ip-local:11434/v1` | Llama 3, Mistral, Qwen | **Privacidade total** — zero dados saindo da rede |
+| **OpenAI** *(atual)* | `api.openai.com/v1` | `gpt-4o`, `gpt-4o-mini` | Padrão atual do projeto |
+| **Anthropic** | `api.anthropic.com/v1` | `claude-3-5-sonnet` | Raciocínio técnico superior |
+| **Groq** | `api.groq.com/openai/v1` | `llama-3-70b`, `mixtral` | Latência ultra-baixa |
+| **OpenRouter** | `openrouter.ai/api/v1` | Todos os acima | Uma chave para todos |
+| **Local (Ollama)** | `ip-local:11434/v1` | Llama 3, Mistral | Privacidade total offline |
 
-> 💡 **Para empresas que proíbem o ChatGPT:** aponte para seu próprio servidor Ollama ou vLLM interno. Seus dados de áudio e imagem **nunca saem da rede corporativa**.
+> 💡 **Para empresas:** quando implementado, será possível apontar para um servidor LLM interno sem que dados de áudio ou imagem saiam da rede corporativa.
+
+> ⚠️ **Quer contribuir?** A implementação do `base_url` dinâmico no cliente HTTP é uma das contribuições mais bem-vindas — veja a seção [Contribuindo](#-contribuindo).
 
 ---
 
