@@ -25,18 +25,49 @@
 
 ---
 
-## ✨ Síntese dos Diferenciais-Chave
+## 🚀 Plataforma "Expert-on-Device": Diferenciais Estratégicos com Impacto Econômico
 
-Mais do que um simples protótipo, a arquitetura e o firmware foram construídos sob o princípio irrenunciável de **soberania de dados** e pensados desde o primeiro dia para **aplicações profissionais reais** (indo além de *gadgets* de consumo).
+Mais do que um simples "assistente de IA embarcado", esta solução é uma **plataforma de especialistas multimodais embarcados, configuráveis e soberanos para aplicações profissionais**. Ela eleva o valor percebido, facilita a verticalização por mercado e sustenta múltiplos modelos de monetização (hardware, licenciamento, perfis especialistas, integrações corporativas).
 
-1. **LLM Agnóstico e Substituível:** Evite o *lock-in* tecnológico. Use OpenAI, Claude, Groq ou, se preferir, aponte inteiramente para um servidor local corporativo próprio.
-2. **"Expert-on-Device":** Perfis especialistas persistentes. O dispositivo se transmuta através das configurações, atuando com o contexto de um agrônomo, um auxiliar médico ou um engenheiro.
-3. **Multimodalidade Completa em Microcontrolador:** Visão computacional com inteligência e processamento de comandos de voz trabalhando juntos nativamente.
-4. **Execução Híbrida (*Edge* + *On-premise*):** Toda a operação e *interface* veloz rodam localmente (*edge*), com as inferências pesadas distribuídas de forma flexível.
-5. **Configuração Dinâmica:** Altere credenciais de rede, *tokens* da API e os perfis através do portal web integrado da placa, **sem precisar recompilar**.
-6. **Persistência Local e Auditável:** Áudios gravados pela placa, imagens capturadas e *logs* completos transcritos sendo guardados no Cartão SD para rastreabilidade de negócio.
-7. **Firmware Modular e Portável:** Lógica pensada para ser encapsulada em diferentes moldes: desde um crachá de acesso corporativo até óculos inteligentes e capacetes.
-8. **Hardware Extremamente Acessível:** Custo marginal para escalar a operação sem estar amarrado a assinaturas predatórias.
+1. **LLM Agnóstico → Redução de Custos Operacionais**
+   Permite uso de servidor próprio ou troca de modelo conforme preço/desempenho.
+   *Impacto:* elimina dependência de fornecedores e reduz custo por inferência.
+
+2. **Execução *Edge* + *On-Premise* → Privacidade e Conformidade**
+   Processamento local com envio opcional ao servidor próprio.
+   *Impacto:* viável para hospitais, indústria e agro com restrição e dados sensíveis.
+
+3. **Perfis Especialistas Persistentes → Produto Verticalizável**
+   Cada dispositivo pode atuar como especialista embarcado (agro, manutenção, ensino).
+   *Impacto:* cria linhas de produto segmentadas com maior ticket médio (B2B).
+
+4. **Hardware de Baixo Custo → Escala em Larga Quantidade**
+   Base em ESP32 permite implantação massiva com baixo CAPEX (U$20 - U$33 a unidade).
+   *Impacto:* viabiliza vendas em volume para grandes empresas e instituições.
+
+5. **Multimodalidade Completa → Substituição Parcial de Mão de Obra Especializada**
+   Combina visão + voz + contexto técnico nativamente e em tempo real.
+   *Impacto:* redução drástica de tempo de diagnóstico e suporte técnico.
+
+6. **Configuração Dinâmica → Implantação Rápida em Campo**
+   Perfis e *endpoints* configuráveis via Portal Integrado, sem recompilação de código.
+   *Impacto:* menor custo logístico de suporte e manutenção para os clientes.
+
+7. **Persistência Local de Logs no SD → Auditoria e Pesquisa**
+   Armazenamento automático das interações para análise posterior (áudios, *logs* e fotos).
+   *Impacto:* valor essencial para universidades, P&D e ambientes regulados.
+
+8. **Firmware Modular → Licenciamento Tecnológico**
+   Arquitetura reutilizável em múltiplos dispositivos e parceiros OEM.
+   *Impacto:* abre modelo escalável de receita por licenciamento de *firmware*.
+
+9. **Soberania de Dados → Diferencial Competitivo Institucional**
+   Operação totalmente contida localmente quando em rede corporativa interna.
+   *Impacto:* forte apelo comercial para órgãos públicos, indústria e centros de pesquisa.
+
+10. **Plataforma “Expert-on-Device” → Base para Ecossistema**
+    Permite vender e atualizar perfis especialistas como módulos ou serviços.
+    *Impacto:* fomenta a receita recorrente muito além da venda de hardware.
 
 ---
 
