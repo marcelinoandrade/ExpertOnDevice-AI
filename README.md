@@ -45,7 +45,7 @@ Mais do que um simples "assistente de IA embarcado", esta solução é uma **pla
    Base em ESP32 permite implantação massiva com baixo CAPEX (U$20 - U$33 a unidade).
    *Impacto:* viabiliza vendas em volume para grandes empresas e instituições.
 
-5. **Multimodalidade Completa → Substituição Parcial de Mão de Obra Especializada**
+5. **Multimodalidade Completa → Apoio Objetivo à Mão de Obra Especializada**
    Combina visão + voz + contexto técnico nativamente e em tempo real.
    *Impacto:* redução drástica de tempo de diagnóstico e suporte técnico.
 
