@@ -25,7 +25,22 @@
 
 ---
 
-## 🎯 Por que este projeto vai te surpreender
+## ✨ Síntese dos Diferenciais-Chave
+
+Mais do que um simples protótipo, a arquitetura e o firmware foram construídos sob o princípio irrenunciável de **soberania de dados** e pensados desde o primeiro dia para **aplicações profissionais reais** (indo além de *gadgets* de consumo).
+
+1. **LLM Agnóstico e Substituível:** Evite o *lock-in* tecnológico. Use OpenAI, Claude, Groq ou, se preferir, aponte inteiramente para um servidor local corporativo próprio.
+2. **"Expert-on-Device":** Perfis especialistas persistentes. O dispositivo se transmuta através das configurações, atuando com o contexto de um agrônomo, um auxiliar médico ou um engenheiro.
+3. **Multimodalidade Completa em Microcontrolador:** Visão computacional com inteligência e processamento de comandos de voz trabalhando juntos nativamente.
+4. **Execução Híbrida (*Edge* + *On-premise*):** Toda a operação e *interface* veloz rodam localmente (*edge*), com as inferências pesadas distribuídas de forma flexível.
+5. **Configuração Dinâmica:** Altere credenciais de rede, *tokens* da API e os perfis através do portal web integrado da placa, **sem precisar recompilar**.
+6. **Persistência Local e Auditável:** Áudios gravados pela placa, imagens capturadas e *logs* completos transcritos sendo guardados no Cartão SD para rastreabilidade de negócio.
+7. **Firmware Modular e Portável:** Lógica pensada para ser encapsulada em diferentes moldes: desde um crachá de acesso corporativo até óculos inteligentes e capacetes.
+8. **Hardware Extremamente Acessível:** Custo marginal para escalar a operação sem estar amarrado a assinaturas predatórias.
+
+---
+
+## 🎯 Comparativo com Soluções de Mercado
 
 | | ✅ ESP32 AI Assistant | ❌ Soluções Típicas |
 |---|---|---|
