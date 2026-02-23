@@ -76,13 +76,13 @@ Mais do que um simples "assistente de IA embarcado", esta solução é uma **pla
 | | ✅ ESP32 AI Assistant | ❌ Soluções Típicas |
 |---|---|---|
 | 💰 Custo do hardware | **U$33 (P4-EYE no DigiKey) ou U$20 (S3)** | U$200 a U$2.000+ |
-| 🌐 Servidor próprio | **Não precisa** | Obrigatório |
-| 🤖 Modelo de IA | **Agnóstico** (troca via recompilação; JSON dinâmico em roadmap) | Preso a 1 fornecedor |
-| 📷 Visão Computacional | **Sim — câmera 2MP embarcada** | Raramente |
+| 🌐 Servidor próprio | **Opcional (suporta on-premise)** | Obrigatório |
+| 🤖 Modelo de IA | **Agnóstico a provedores (suporte a cloud ou LLM próprio)** | Preso a 1 fornecedor |
+| 📷 Visão Computacional | **Sim — câmera 2MP embarcada** | Limitada ou dependente de cloud |
 | 🎙️ Processamento de Voz | **Tempo real, edge** | Nuvem obrigatória |
 | 🔐 **Privacidade dos dados** | **Processamento local (on-premise)** | Dados em servidores de terceiros |
 | 🔋 Consumo de energia | **Ultra baixo** | Alto |
-| 👕 **Wearable** | **✅ Versão S3** é compacta o suficiente | ❌ Impossível |
+| 👕 **Wearable** | **✅ Versão S3** é compacta o suficiente | ❌ Raro / dependente de ecossistema proprietário |
 | 📦 Tamanho | **Menor que um baralho** | Desktop ou servidor |
 
 ---
