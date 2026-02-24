@@ -132,12 +132,12 @@ A arquitetura do firmware foi desenhada para suportar qualquer provedor via API 
 **Hardware:** ESP32-P4 + ESP32-C6 Wi-Fi co-processor + OV2710 (2MP ISP) + Display + SD Card
 
 - 📷 Câmera 2MP com ISP avançado: AWB, AGC, AE automáticos
-- 🖥️ Display LVGL com scroll de resposta (Btn2/Btn3)
+- 🖥️ Display LVGL com scroll de resposta e OSD nativo (Wi-Fi e Bateria)
 - 💾 SD Card: salva fotos, áudios (WAV), logs de conversa diários
-- 🌐 Wi-Fi via ESP32-C6 (ESP-Hosted, SDIO 4-bit, 20MHz)
+- 🌐 Wi-Fi via ESP32-C6 (ESP-Hosted) com tolerância a falhas (NVS Cache)
 - 🕐 SNTP: timestamps precisos em todos os arquivos salvos
 - ⚙️ **Captive Portal**: configura Wi-Fi e IA via browser em 30 segundos
-- 🔊 Microfone PDM integrado
+- 🔊 Microfone PDM integrado + Leitura Analógica (ADC) do nível de bateria
 - 👁️ Dois modos: **Voz** (só áudio) e **Foto+Voz** (câmera + áudio)
 
 ---
@@ -395,11 +395,13 @@ Usuário → [Voz + Foto opcional]
 - [x] **URL Base e Modelo Dinâmico**: Mude de API sem plugar o cabo ou recompilar o firmware (ESP32-P4-EYE).
 - [x] **Modo Especialista Combinado**: Integre personalidades e identidades customizadas do Web App junto dos 3 perfis físicos nativos (Geral, Agrônomo, Engenheiro).
 - [x] **Captive Portal Zero-Touch**: Configura rede Wi-Fi, Token da LLM, URL e Modelo da IA via browser em 30 segundos!
+- [x] **Histórico de Conversa (Multi-turn)**: Memória RAM PSRAM avançada retém as últimas 10 iterações de forma dinâmica na "janela de contexto". O dispositivo lembra o que você falou momentos antes.
 - [x] SD Card: fotos (`IMG_*.jpg`), áudios (`REC_*.wav`), logs (`CHAT_*.txt`)
 - [x] SNTP: timestamps precisos em todos os arquivos
 - [x] Long File Names (FATFS LFN habilitado)
 - [x] Interface LVGL com scroll (Btn2/Btn3)
 - [x] Servidor DNS para Captive Portal automático (Android/iOS/Windows)
+- [x] Histórico de conversa inteligente (multi-turn c/ Slide-Window)
 - [ ] TTS (Text-to-Speech) — *planejado*
 - [ ] Wake word local (sem botão) — *planejado*
 - [ ] App BLE companion — *planejado*

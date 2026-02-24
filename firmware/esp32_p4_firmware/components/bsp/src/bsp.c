@@ -537,6 +537,8 @@ int bsp_knob_consume_delta(void) {
   return delta;
 }
 
+bool bsp_wifi_is_ready(void) { return s_wifi_ready; }
+
 esp_err_t bsp_camera_capture_jpeg(uint8_t **jpeg_data, size_t *jpeg_len) {
   if (!jpeg_data || !jpeg_len) {
     return ESP_ERR_INVALID_ARG;

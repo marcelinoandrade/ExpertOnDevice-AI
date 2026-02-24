@@ -19,6 +19,9 @@
 | 💬 Append do log de chat | **< 10 ms** | Arquivo CHAT_YYYYMMDD.txt diário |
 | 🔧 Captive Portal | **~2,5 s** | Do trigger ao HTTP server ativo |
 | 🔋 DHCP para cliente AP | **~200 ms** | Atribuição de 192.168.4.2 confirmada |
+| ⚡ One-Click-to-Talk (Dismiss) | **Instantâneo** | Pula o tempo de debounce transitório |
+| 📚 Multi-Turn em PSRAM | **11 KB** | Retenção das últimas 10 falas seguras na PSRAM |
+| 🔋 Leitura de Bateria (ADC) | **~O(1)** | Leitura on-shot milivolts via ADC (`GPIO_NUM_49`) curvada e atenuada |
 
 ---
 
@@ -83,6 +86,39 @@ I (50568) app_storage: Batch save: 1 saved, 0 failed (SD kept mounted)
 
 ---
 
+## ⚡ Nova Vida Útil: One-Click-to-Talk e Limpeza Multi-Turno
+
+```
+I (34918) app: encoder press -> dismiss & start recording
+I (34919) app: starting interaction in mode=Voz
+...
+I (75696) app: History cleared.
+```
+
+**Observações:**
+- O sistema permitiu segurar o encoder enquanto lia a resposta anterior e já engatilhou a gravação nova em um pulso de clock (bypassing IDLE UI).
+- Evento de "Esquecimento de IA" (`app: History cleared`) devidamente acionado ao trocar de perfil, resguardando contexto da aplicação de alucinações.
+
+---
+
+## 🛡️ Proteção e Isolamento de Falhas (Error Handling HTTP 500)
+
+```
+E (123284) app: AI HTTP status=500 body={
+  "error": {
+    "message": "The model produced invalid content. Consider modifying your prompt if you are seeing this error persistently.",
+    "type": "model_error"
+  }
+}
+W (123296) app: audio transcription failed; using fallback question
+```
+
+**Observações:**
+- Em um dos ciclos a OpenAI retornou erro HTTP 500 interno do LLM deles. A controladora lidou **magistralmente** com a exceção em C. 
+- A placa **NÃO travou (Zero OOM / Reboot)**. Ela realizou o Free de toda a memória alocada, engatilhou fallback limpo para o usuário tentar novamente na tela LCD e continuou rodando suave.
+
+---
+
 ## 🌐 Captive Portal — Sequência de Ativação
 
 ```
@@ -126,6 +162,20 @@ Diagnóstico DMA em cada save:
 ```
 
 **Conclusão:** O sistema mantém 3–6x a memória DMA necessária disponível durante operação intensiva.
+
+---
+
+## 🔋 Telemetria de Componentes e Feedback Visual (UI)
+
+O firmware gerencia diretamente no hardware a extração de dados da bateria da placa, atualizando a Interface LVGL (UI) a cada 2000 milissegundos na *Status Bar*:
+
+```
+- Leitura analógica no GPIO_NUM_49
+- Configuração de ADC Oneshot com atenuação ADC_ATTEN_DB_12 (~3.1V F.S.)
+- Curva de calibração nativa injetada na medição (Scheme Curve Fitting para o P4)
+- Divisor de tensão compensado via software no cálculo percentual
+- Alertas visuais: o Símbolo de Bateria fica vermelho (#00FFFF devido à inversão de hardware da tela) quando cai a 15% ou menos. O Wi-Fi acompanha a mesma lógica visual de alerta caso a rede caia.
+```
 
 ---
 

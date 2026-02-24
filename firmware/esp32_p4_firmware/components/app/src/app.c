@@ -1,10 +1,14 @@
 #include "app.h"
 
+#include "esp_adc/adc_cali.h"
+#include "esp_adc/adc_cali_scheme.h"
+#include "esp_adc/adc_oneshot.h"
 #include <netdb.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "cJSON.h"
+#include "driver/gpio.h"
 #include "esp_crt_bundle.h"
 #include "esp_heap_caps.h"
 #include "esp_http_client.h"
@@ -45,6 +49,7 @@ esp_err_t gui_show_camera_preview_rgb565(const uint8_t *rgb565_data,
 #define APP_RESPONSE_SCROLL_STEP_PX 22
 #define APP_AI_MODEL_AUDIO_TEXT "gpt-4o-audio-preview"
 #define APP_HTTP_TIMEOUT_MS 45000
+// AI Modes
 
 typedef enum {
   APP_EVT_BOOT = 0,
@@ -68,7 +73,7 @@ typedef struct {
 
 static const char *TAG = "app";
 static QueueHandle_t s_app_queue;
-static app_state_t s_state = APP_STATE_IDLE;
+static app_state_t s_state = APP_STATE_BOOTING;
 static bool s_interaction_requested;
 static bool s_prev_encoder_pressed;
 static bool s_prev_photo_button_pressed;
@@ -91,6 +96,50 @@ static bool s_preview_active =
 static app_expert_profile_t s_expert_profile = APP_EXPERT_PROFILE_GENERAL;
 static char s_last_response[APP_RESPONSE_TEXT_MAX] =
     "Pronto.\nSegure encoder e fale.";
+
+// Battery ADC
+#define BATTERY_ADC_PIN GPIO_NUM_49
+static adc_oneshot_unit_handle_t s_adc_handle = NULL;
+static adc_channel_t s_adc_channel;
+static adc_cali_handle_t s_adc_cali_handle = NULL;
+static bool s_adc_calibrated = false;
+
+/* Multi-turn Chat History in PSRAM */
+#define APP_MAX_HISTORY_TURNS 10
+#define APP_HISTORY_TIMEOUT_MS (5 * 60 * 1000)
+
+typedef struct {
+  char user_prompt[APP_RESPONSE_TEXT_MAX];
+  char ai_response[APP_RESPONSE_TEXT_MAX];
+} app_history_entry_t;
+
+static app_history_entry_t *s_chat_history = NULL;
+static size_t s_chat_history_count = 0;
+static TickType_t s_last_interaction_ticks = 0;
+
+static void app_history_add(const char *user, const char *ai) {
+  if (!s_chat_history)
+    return;
+
+  if (s_chat_history_count == APP_MAX_HISTORY_TURNS) {
+    memmove(&s_chat_history[0], &s_chat_history[1],
+            (APP_MAX_HISTORY_TURNS - 1) * sizeof(app_history_entry_t));
+    s_chat_history_count--;
+  }
+
+  strlcpy(s_chat_history[s_chat_history_count].user_prompt,
+          (user && user[0]) ? user : "(Audio enviado)", APP_RESPONSE_TEXT_MAX);
+  strlcpy(s_chat_history[s_chat_history_count].ai_response,
+          (ai && ai[0]) ? ai : "", APP_RESPONSE_TEXT_MAX);
+  s_chat_history_count++;
+  s_last_interaction_ticks = xTaskGetTickCount();
+}
+
+static void app_history_clear(void) {
+  s_chat_history_count = 0;
+  s_last_interaction_ticks = 0;
+  ESP_LOGI(TAG, "History cleared.");
+}
 
 /* Long-press config portal: btn2 + btn3 simultaneos por 10 s */
 #define APP_CONFIG_PORTAL_LONGPRESS_MS 10000
@@ -401,7 +450,7 @@ app_profile_transcription_terms(app_expert_profile_t profile) {
 static esp_err_t app_build_ai_request_json(
     const char *model, const char *audio_b64, const char *image_data_url,
     const char *system_profile_text, const char *image_context_text,
-    const char *audio_context_text, char **out_json) {
+    const char *audio_context_text, bool inject_history, char **out_json) {
   if (!model || !out_json) {
     return ESP_ERR_INVALID_ARG;
   }
@@ -447,6 +496,22 @@ static esp_err_t app_build_ai_request_json(
   cJSON_AddStringToObject(system_msg, "content", system_content);
   free(system_content);
   cJSON_AddItemToArray(messages, system_msg);
+
+  if (inject_history && s_chat_history && s_chat_history_count > 0) {
+    for (size_t i = 0; i < s_chat_history_count; i++) {
+      cJSON *hist_user = cJSON_CreateObject();
+      cJSON_AddStringToObject(hist_user, "role", "user");
+      cJSON_AddStringToObject(hist_user, "content",
+                              s_chat_history[i].user_prompt);
+      cJSON_AddItemToArray(messages, hist_user);
+
+      cJSON *hist_ai = cJSON_CreateObject();
+      cJSON_AddStringToObject(hist_ai, "role", "assistant");
+      cJSON_AddStringToObject(hist_ai, "content",
+                              s_chat_history[i].ai_response);
+      cJSON_AddItemToArray(messages, hist_ai);
+    }
+  }
 
   cJSON *user_msg = cJSON_CreateObject();
   cJSON *user_content = cJSON_CreateArray();
@@ -615,12 +680,11 @@ static esp_err_t app_http_post_json(const char *request_json,
   return err;
 }
 
-static esp_err_t app_call_ai_once(const char *model, const char *audio_b64,
-                                  const char *image_data_url,
-                                  const char *system_profile_text,
-                                  const char *image_context_text,
-                                  const char *audio_context_text,
-                                  char *out_text, size_t out_text_len) {
+static esp_err_t
+app_call_ai_once(const char *model, const char *audio_b64,
+                 const char *image_data_url, const char *system_profile_text,
+                 const char *image_context_text, const char *audio_context_text,
+                 bool inject_history, char *out_text, size_t out_text_len) {
   if (!model || !out_text || out_text_len == 0) {
     return ESP_ERR_INVALID_ARG;
   }
@@ -628,7 +692,7 @@ static esp_err_t app_call_ai_once(const char *model, const char *audio_b64,
   char *request_json = NULL;
   esp_err_t build_err = app_build_ai_request_json(
       model, audio_b64, image_data_url, system_profile_text, image_context_text,
-      audio_context_text, &request_json);
+      audio_context_text, inject_history, &request_json);
   if (build_err != ESP_OK) {
     return build_err;
   }
@@ -764,7 +828,7 @@ static esp_err_t app_call_ai_with_audio(const uint8_t *wav_data, size_t wav_len,
             : config_manager_get()->ai_model;
     err = app_call_ai_once(audio_model, audio_b64, NULL,
                            app_profile_system_prompt(s_expert_profile), NULL,
-                           transcription_prompt, transcript_text,
+                           transcription_prompt, false, transcript_text,
                            sizeof(transcript_text));
     free(transcription_prompt);
     // CRITICO: libera audio_b64 logo apos o ciclo 1 para aliviar memoria
@@ -799,8 +863,12 @@ static esp_err_t app_call_ai_with_audio(const uint8_t *wav_data, size_t wav_len,
 
     err = app_call_ai_once(config_manager_get()->ai_model, NULL, image_data_url,
                            app_profile_system_prompt(s_expert_profile),
-                           vision_prompt, NULL, out_text, out_text_len);
+                           vision_prompt, NULL, true, out_text, out_text_len);
     free(vision_prompt);
+
+    if (err == ESP_OK) {
+      app_history_add(transcript_text, out_text);
+    }
   } else {
     // Modo somente audio
     ESP_LOGI(TAG, "Audio-only path initiated");
@@ -823,8 +891,12 @@ static esp_err_t app_call_ai_with_audio(const uint8_t *wav_data, size_t wav_len,
             : config_manager_get()->ai_model;
     err = app_call_ai_once(audio_model, audio_b64, NULL,
                            app_profile_system_prompt(s_expert_profile), NULL,
-                           audio_only_prompt, out_text, out_text_len);
+                           audio_only_prompt, true, out_text, out_text_len);
     free(audio_only_prompt);
+
+    if (err == ESP_OK) {
+      app_history_add(NULL, out_text);
+    }
     // Libera audio_b64 apos uso
     free(audio_b64);
     audio_b64 = NULL;
@@ -873,6 +945,10 @@ static void app_set_state(app_state_t next_state) {
     state_str = "Resposta";
     footer_str = "Btn2:sobe Btn3:desce Enc:sair";
     break;
+  case APP_STATE_BOOTING:
+    state_str = "Iniciando";
+    footer_str = "Aguarde...";
+    break;
   default:
     state_str = "Erro";
     footer_str = "Qualquer botao: tentar de novo";
@@ -903,10 +979,78 @@ static void app_show_mode_selection_ui(void) {
 }
 
 static void app_enter_mode_selection(void) {
+  // Check if we are already in mode selection to avoid recursion
+  if (s_state == APP_STATE_SELECTING_MODE) {
+    return;
+  }
   app_set_state(APP_STATE_SELECTING_MODE);
   s_mode_select_last_activity_ticks = xTaskGetTickCount();
   gui_set_response_compact(true); /* Shrink panel so camera is visible */
   app_show_mode_selection_ui();
+}
+
+static void app_battery_init(void) {
+  adc_unit_t unit;
+  if (adc_oneshot_io_to_channel(BATTERY_ADC_PIN, &unit, &s_adc_channel) !=
+      ESP_OK) {
+    ESP_LOGE(TAG, "GPIO %d cannot be used for ADC", BATTERY_ADC_PIN);
+    return;
+  }
+
+  adc_oneshot_unit_init_cfg_t init_config = {
+      .unit_id = unit,
+      .ulp_mode = ADC_ULP_MODE_DISABLE,
+  };
+  if (adc_oneshot_new_unit(&init_config, &s_adc_handle) != ESP_OK) {
+    return;
+  }
+
+  adc_oneshot_chan_cfg_t config = {
+      .bitwidth = ADC_BITWIDTH_DEFAULT,
+      .atten = ADC_ATTEN_DB_12, // For reading up to ~3.3V / 3.1V
+  };
+  adc_oneshot_config_channel(s_adc_handle, s_adc_channel, &config);
+
+  // Call calibration (Scheme Curve Fitting for P4)
+  adc_cali_curve_fitting_config_t cali_config = {
+      .unit_id = unit,
+      .chan = s_adc_channel,
+      .atten = ADC_ATTEN_DB_12,
+      .bitwidth = ADC_BITWIDTH_DEFAULT,
+  };
+  s_adc_calibrated = (adc_cali_create_scheme_curve_fitting(
+                          &cali_config, &s_adc_cali_handle) == ESP_OK);
+}
+
+static int app_battery_read_percent(void) {
+  if (!s_adc_handle)
+    return -1;
+
+  int raw = 0;
+  if (adc_oneshot_read(s_adc_handle, s_adc_channel, &raw) != ESP_OK) {
+    return -1;
+  }
+
+  int voltage_mv = 0;
+  if (s_adc_calibrated) {
+    adc_cali_raw_to_voltage(s_adc_cali_handle, raw, &voltage_mv);
+  } else {
+    // Fallback rough estimate
+    voltage_mv = (raw * 3100) / 4095;
+  }
+
+  // Tensão real multiplicada pelo divisor: (1M + 332k) / 332k = 1.332M / 332k
+  // = 4.01 Caso use o divisor (R15=1M, R16=332K). Se R16 for NC, o ADC lerá
+  // ~Raw VDD. Simulando divisor ativo:
+  float vbat = (voltage_mv * 4.01f) / 1000.0f;
+
+  int percent = (int)((vbat - 3.2f) * 100.0f / (4.2f - 3.2f));
+  if (percent < 0)
+    percent = 0;
+  if (percent > 100)
+    percent = 100;
+
+  return percent;
 }
 
 static void app_confirm_mode_selection(void) {
@@ -1260,6 +1404,7 @@ static esp_err_t app_do_interaction(void) {
 static void app_task(void *arg) {
   app_event_t evt;
   (void)arg;
+  TickType_t last_status_update = 0;
 
   while (1) {
     if (xQueueReceive(s_app_queue, &evt, pdMS_TO_TICKS(APP_BUTTON_POLL_MS)) ==
@@ -1270,12 +1415,24 @@ static void app_task(void *arg) {
       }
 
       if (evt.type == APP_EVT_INTERACTION_REQUESTED) {
+        if (s_last_interaction_ticks > 0 &&
+            (xTaskGetTickCount() - s_last_interaction_ticks) >
+                pdMS_TO_TICKS(APP_HISTORY_TIMEOUT_MS)) {
+          app_history_clear();
+        }
+
         esp_err_t err = app_do_interaction();
         if (err != ESP_OK) {
           app_set_state(APP_STATE_ERROR);
           gui_set_response("Falha na comunicacao.\nTente novamente.");
         }
       }
+    }
+
+    if (xTaskGetTickCount() - last_status_update > pdMS_TO_TICKS(2000)) {
+      last_status_update = xTaskGetTickCount();
+      int batt = app_battery_read_percent();
+      gui_set_status_icons(bsp_wifi_is_ready(), batt);
     }
 
     // Handle response view: btn2/btn3 scroll, encoder or btn1 exits.
@@ -1308,6 +1465,23 @@ static void app_task(void *arg) {
           gui_set_response_compact(false);
           gui_set_response(s_last_response);
         }
+
+        /* Se descartou a tela usando o Encoder, ja tenta engatilhar
+         * a proxima gravacao diretamente (One-Click-to-Talk) */
+        if (encoder_pressed_edge) {
+          if (s_interaction_mode == APP_INTERACTION_MODE_AUDIO_IMAGE_TEXT &&
+              !s_photo_locked) {
+            gui_set_response_compact(true);
+            gui_set_response("Capture foto primeiro.\n(Btn1)");
+          } else {
+            s_interaction_requested = true;
+            ESP_LOGI(TAG, "encoder press -> dismiss & start recording");
+            const app_event_t interaction_evt = {
+                .type = APP_EVT_INTERACTION_REQUESTED};
+            xQueueSend(s_app_queue, &interaction_evt, 0);
+          }
+        }
+
         s_prev_encoder_pressed = encoder_now_pressed;
         s_prev_photo_button_pressed = photo_button_now_pressed;
         s_prev_btn2_pressed = btn2_now;
@@ -1350,6 +1524,7 @@ static void app_task(void *arg) {
           s_interaction_mode = APP_INTERACTION_MODE_AUDIO_TEXT;
           app_clear_locked_photo();
         }
+        app_history_clear();
         s_mode_select_last_activity_ticks = xTaskGetTickCount();
         app_show_mode_selection_ui();
       }
@@ -1361,6 +1536,7 @@ static void app_task(void *arg) {
           s_expert_profile = (app_expert_profile_t)((s_expert_profile + 1) % 3);
           s_mode_select_last_activity_ticks = xTaskGetTickCount();
           app_show_mode_selection_ui();
+          app_history_clear();
         } else if ((xTaskGetTickCount() - s_mode_select_last_activity_ticks) >
                    pdMS_TO_TICKS(APP_MODE_SELECT_TIMEOUT_MS)) {
           gui_set_response_compact(false);
@@ -1459,6 +1635,17 @@ esp_err_t app_init(void) {
     return ESP_FAIL;
   }
 
+  s_chat_history =
+      heap_caps_calloc(APP_MAX_HISTORY_TURNS, sizeof(app_history_entry_t),
+                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!s_chat_history) {
+    ESP_LOGW(TAG,
+             "Failed to allocate PSRAM history, allocating in regular RAM");
+    s_chat_history =
+        heap_caps_calloc(APP_MAX_HISTORY_TURNS, sizeof(app_history_entry_t),
+                         MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  }
+
   // Initialize storage subsystem
   esp_err_t storage_err = app_storage_init();
   if (storage_err != ESP_OK) {
@@ -1479,13 +1666,17 @@ esp_err_t app_init(void) {
              esp_err_to_name(cfg_err));
   }
 
+  app_battery_init();
+
   return ESP_OK;
 }
 
 void app_start(void) {
-  const app_event_t evt = {.type = APP_EVT_BOOT};
+  app_set_state(APP_STATE_BOOTING);
+
+  const app_event_t boot_evt = {.type = APP_EVT_BOOT};
   if (s_app_queue) {
-    xQueueSend(s_app_queue, &evt, 0);
+    xQueueSend(s_app_queue, &boot_evt, 0);
   }
   gui_set_response(s_last_response);
 }
