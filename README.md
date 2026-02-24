@@ -160,6 +160,18 @@ A arquitetura do firmware foi desenhada para suportar qualquer provedor via API 
 - 👕 **Tamanho ideal**: Pode servir de smartwatch ou crachá corporativo inteligente.
 - 📡 Wi-Fi nativo — sem chip auxiliar e com Portal Web de Configuração integrado.
 
+### Comparativo Físico das Versões
+
+| Feature | ESP32-S3 | ESP32-P4-EYE |
+|---|---|---|
+| **Câmera** | ❌ | ✅ 2MP |
+| **Display LVGL** | ✅ ST7789/SPI | ✅ MIPI-DSI |
+| **SD Card** | ✅ SPI | ✅ SDIO |
+| **Captive Portal**| ✅ | ✅ |
+| **SNTP / RTC** | ✅ | ✅ |
+| **Rede Wi-Fi** | STA Nativo | Via C6 (ESP-Hosted)|
+| **Deep Sleep** | ✅ Otimizado (< µA) | ❌ |
+
 ---
 
 ## � Casos de Uso Reais (e onde está o dinheiro)
