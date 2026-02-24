@@ -151,13 +151,14 @@ A arquitetura do firmware foi desenhada para suportar qualquer provedor via API 
 
 </div>
 
-**Hardware:** Qualquer ESP32-S3 com microfone — kits completos a partir de **~U$20**
+**Hardware:** Kits ESP32-S3 com Microfone e Display (ex: ESP32-S3-Touch-LCD) a partir de **~U$20**
 
-- 🔋 Perfeito para alimentação por bateria (durações de dias)
-- 👕 **Tamanho ideal para wearables**: smartwatch, crachá, óculos inteligentes
-- 🎙️ Voz para texto com qualidade profissional via API
-- 📡 Wi-Fi nativo — sem chip auxiliar
-- 💲 ROI imediato: mesmo hardware disponível em qualquer loja de eletrônicos
+- 🔋 Bateria Otimizada: Modo de baixo consumo (**Deep Sleep**) integrado, dura dias. Reativação no clique via `Wake-on-Button`.
+- 🎙️ Interação Fluida: **Push-to-Talk** (Borda de hardware perfeita para Início e Fim da gravação). O visor congela a reposta da IA até que você inicie uma nova gravação.
+- 🖥️ **Apoio Local (Offline):** Grava os áudios e logs de chats em **SD Card**, com interface LVGL rodando em barramento SPI.
+- ⚡ **Arquitetura 8.8/10 Robusta:** Gestão assíncrona orientada a eventos (`FreeRTOS Queues`), alocação em `PSRAM` impedindo vazamento de RAM e *Opportunistic Saving*.
+- 👕 **Tamanho ideal**: Pode servir de smartwatch ou crachá corporativo inteligente.
+- 📡 Wi-Fi nativo — sem chip auxiliar e com Portal Web de Configuração integrado.
 
 ---
 
@@ -390,18 +391,18 @@ Usuário → [Voz + Foto opcional]
 
 ## 📋 Funcionalidades
 
-- [x] Push-to-talk com encoder rotativo
+- [x] **Push-to-talk Robusto**: Inícia na "borda de descida" e finaliza na "subida". Sem flags fáceis de quebrar. Última resposta da IA persiste na tela para o usuário consultar.
 - [x] Modo **Voz** (somente áudio) e **Foto+Voz** (câmera + áudio simultâneos)
 - [x] **URL Base e Modelo Dinâmico**: Mude de API sem plugar o cabo ou recompilar o firmware (ESP32-P4-EYE).
 - [x] **Modo Especialista Combinado**: Integre personalidades e identidades customizadas do Web App junto dos 3 perfis físicos nativos (Geral, Agrônomo, Engenheiro).
 - [x] **Captive Portal Zero-Touch**: Configura rede Wi-Fi, Token da LLM, URL e Modelo da IA via browser em 30 segundos!
+- [x] **Arquitetura Event-Driven & PSRAM**: Uso otimizado de Tasks (`FreeRTOS`), Mutex no barramento SPI p/ não causar lentidão na GUI/SD e salvamento oportunista offline (`Opportunistic Data Saving`).
 - [x] **Histórico de Conversa (Multi-turn)**: Memória RAM PSRAM avançada retém as últimas 10 iterações de forma dinâmica na "janela de contexto". O dispositivo lembra o que você falou momentos antes.
 - [x] SD Card: fotos (`IMG_*.jpg`), áudios (`REC_*.wav`), logs (`CHAT_*.txt`)
 - [x] SNTP: timestamps precisos em todos os arquivos
 - [x] Long File Names (FATFS LFN habilitado)
-- [x] Interface LVGL com scroll (Btn2/Btn3)
+- [x] Interface LVGL fluída e Gerenciamento Inteligente de Display/Bateria via **Deep Sleep** (Ext1).
 - [x] Servidor DNS para Captive Portal automático (Android/iOS/Windows)
-- [x] Histórico de conversa inteligente (multi-turn c/ Slide-Window)
 - [ ] TTS (Text-to-Speech) — *planejado*
 - [ ] Wake word local (sem botão) — *planejado*
 - [ ] App BLE companion — *planejado*

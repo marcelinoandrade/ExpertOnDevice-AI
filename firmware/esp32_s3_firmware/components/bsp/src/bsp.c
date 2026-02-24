@@ -5,6 +5,8 @@
 #include "driver/gpio.h"
 #include "driver/i2c.h"
 #include "driver/i2s_std.h"
+#include "driver/ledc.h"
+#include "driver/rtc_io.h"
 #include "driver/spi_master.h"
 #include "esp_check.h"
 #include "esp_err.h"
@@ -16,13 +18,18 @@
 #include "esp_lcd_touch_cst816s.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_sleep.h"
+#include "esp_sntp.h"
 #include "esp_timer.h"
+#include "esp_vfs_fat.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "lvgl.h"
+#include "lwip/ip4_addr.h"
+#include "sdmmc_cmd.h"
 #include "secret.h"
 
 static const char *TAG = "bsp";
@@ -44,8 +51,15 @@ static const char *TAG = "bsp";
 #define BSP_PIN_NUM_I2C_SCL 47
 
 #define BSP_LCD_BK_LIGHT_GPIO 1
+#define LCD_BL_LEDC_TIMER LEDC_TIMER_0
+#define LCD_BL_LEDC_MODE LEDC_LOW_SPEED_MODE
+#define LCD_BL_LEDC_CHANNEL LEDC_CHANNEL_0
+#define LCD_BL_LEDC_DUTY_RES LEDC_TIMER_10_BIT
+#define LCD_BL_LEDC_DUTY 1024
+#define LCD_BL_LEDC_FREQUENCY 10000
+
 #define BSP_BUTTON_GPIO 18
-#define BSP_BUTTON_ACTIVE_LEVEL 1
+#define BSP_BUTTON_ACTIVE_LEVEL 0
 
 #define BSP_I2S_PORT I2S_NUM_0
 /* INMP441 wiring on accessible header pins (UART kept free). */
@@ -71,484 +85,716 @@ static int s_wifi_retry_num;
 #define BSP_WIFI_CONNECTED_BIT BIT0
 #define BSP_WIFI_FAIL_BIT BIT1
 
-static bool bsp_notify_lvgl_flush_ready(
-    esp_lcd_panel_io_handle_t panel_io,
-    esp_lcd_panel_io_event_data_t *edata,
-    void *user_ctx
-)
-{
-    (void)panel_io;
-    (void)edata;
-    (void)user_ctx;
-    lv_disp_flush_ready(&s_disp_drv);
-    return false;
+static bool bsp_notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io,
+                                        esp_lcd_panel_io_event_data_t *edata,
+                                        void *user_ctx) {
+  (void)panel_io;
+  (void)edata;
+  (void)user_ctx;
+  lv_disp_flush_ready(&s_disp_drv);
+  return false;
 }
 
-static void bsp_increase_lvgl_tick(void *arg)
-{
-    (void)arg;
-    lv_tick_inc(BSP_LVGL_TICK_PERIOD_MS);
+static void bsp_increase_lvgl_tick(void *arg) {
+  (void)arg;
+  lv_tick_inc(BSP_LVGL_TICK_PERIOD_MS);
 }
 
-static void bsp_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map)
-{
-    (void)drv;
-    esp_lcd_panel_draw_bitmap(
-        s_panel_handle,
-        area->x1,
-        area->y1,
-        area->x2 + 1,
-        area->y2 + 1,
-        color_map
-    );
+static void bsp_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area,
+                              lv_color_t *color_map) {
+  (void)drv;
+  esp_lcd_panel_draw_bitmap(s_panel_handle, area->x1, area->y1, area->x2 + 1,
+                            area->y2 + 1, color_map);
 }
 
-static void bsp_lvgl_touch_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
-{
-    (void)drv;
-    uint16_t x = 0;
-    uint16_t y = 0;
-    uint8_t touch_cnt = 0;
+static void bsp_lvgl_touch_cb(lv_indev_drv_t *drv, lv_indev_data_t *data) {
+  (void)drv;
+  esp_lcd_touch_point_data_t point;
+  uint8_t touch_cnt = 0;
 
-    esp_lcd_touch_read_data(s_touch_handle);
-    bool pressed = esp_lcd_touch_get_coordinates(
-        s_touch_handle,
-        &x,
-        &y,
-        NULL,
-        &touch_cnt,
-        1
-    );
+  esp_lcd_touch_read_data(s_touch_handle);
+  esp_lcd_touch_get_data(s_touch_handle, &point, &touch_cnt, 1);
 
-    if (pressed && touch_cnt > 0) {
-        data->point.x = x;
-        data->point.y = y;
-        data->state = LV_INDEV_STATE_PRESSED;
+  if (touch_cnt > 0) {
+    data->point.x = point.x;
+    data->point.y = point.y;
+    data->state = LV_INDEV_STATE_PRESSED;
+  } else {
+    data->state = LV_INDEV_STATE_RELEASED;
+  }
+}
+
+static void bsp_lvgl_task(void *arg) {
+  (void)arg;
+  while (1) {
+    uint32_t task_delay_ms = BSP_LVGL_TASK_MAX_DELAY_MS;
+
+    if (bsp_lvgl_lock(-1)) {
+      task_delay_ms = lv_timer_handler();
+      bsp_lvgl_unlock();
+    }
+
+    if (task_delay_ms > BSP_LVGL_TASK_MAX_DELAY_MS) {
+      task_delay_ms = BSP_LVGL_TASK_MAX_DELAY_MS;
+    } else if (task_delay_ms < BSP_LVGL_TASK_MIN_DELAY_MS) {
+      task_delay_ms = BSP_LVGL_TASK_MIN_DELAY_MS;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(task_delay_ms));
+  }
+}
+
+static void bsp_brightness_init(void) {
+  gpio_set_direction(BSP_LCD_BK_LIGHT_GPIO, GPIO_MODE_OUTPUT);
+  gpio_set_level(BSP_LCD_BK_LIGHT_GPIO, 1);
+
+  ledc_timer_config_t ledc_timer = {.speed_mode = LCD_BL_LEDC_MODE,
+                                    .timer_num = LCD_BL_LEDC_TIMER,
+                                    .duty_resolution = LCD_BL_LEDC_DUTY_RES,
+                                    .freq_hz = LCD_BL_LEDC_FREQUENCY,
+                                    .clk_cfg = LEDC_AUTO_CLK};
+  ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
+
+  ledc_channel_config_t ledc_channel = {.speed_mode = LCD_BL_LEDC_MODE,
+                                        .channel = LCD_BL_LEDC_CHANNEL,
+                                        .timer_sel = LCD_BL_LEDC_TIMER,
+                                        .intr_type = LEDC_INTR_DISABLE,
+                                        .gpio_num = BSP_LCD_BK_LIGHT_GPIO,
+                                        .duty = 0,
+                                        .hpoint = 0};
+  ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
+}
+
+static void bsp_brightness_set_level(uint8_t level) {
+  if (level > 100)
+    level = 100;
+  uint32_t duty = (level * (LCD_BL_LEDC_DUTY - 1)) / 100;
+  ledc_set_duty(LCD_BL_LEDC_MODE, LCD_BL_LEDC_CHANNEL, duty);
+  ledc_update_duty(LCD_BL_LEDC_MODE, LCD_BL_LEDC_CHANNEL);
+}
+
+static esp_err_t bsp_lcd_init(void) {
+  spi_bus_config_t buscfg = {
+      .sclk_io_num = BSP_PIN_NUM_LCD_SCLK,
+      .mosi_io_num = BSP_PIN_NUM_LCD_MOSI,
+      .miso_io_num = BSP_PIN_NUM_LCD_MISO,
+      .quadwp_io_num = -1,
+      .quadhd_io_num = -1,
+      .max_transfer_sz = BSP_LCD_H_RES * 80 * sizeof(lv_color_t),
+  };
+  ESP_RETURN_ON_ERROR(
+      spi_bus_initialize(BSP_SPI_HOST, &buscfg, SPI_DMA_CH_AUTO), TAG,
+      "spi init");
+
+  esp_lcd_panel_io_handle_t io_handle = NULL;
+  esp_lcd_panel_io_spi_config_t io_config = {
+      .dc_gpio_num = BSP_PIN_NUM_LCD_DC,
+      .cs_gpio_num = BSP_PIN_NUM_LCD_CS,
+      .pclk_hz = BSP_LCD_PIXEL_CLOCK_HZ,
+      .lcd_cmd_bits = 8,
+      .lcd_param_bits = 8,
+      .spi_mode = 0,
+      .trans_queue_depth = 10,
+      .on_color_trans_done = bsp_notify_lvgl_flush_ready,
+  };
+  ESP_RETURN_ON_ERROR(
+      esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)BSP_SPI_HOST,
+                               &io_config, &io_handle),
+      TAG, "panel io init");
+
+  esp_lcd_panel_dev_config_t panel_config = {
+      .reset_gpio_num = BSP_PIN_NUM_LCD_RST,
+      .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
+      .bits_per_pixel = 16,
+  };
+  ESP_RETURN_ON_ERROR(
+      esp_lcd_new_panel_st7789(io_handle, &panel_config, &s_panel_handle), TAG,
+      "panel init");
+  ESP_RETURN_ON_ERROR(esp_lcd_panel_reset(s_panel_handle), TAG, "panel reset");
+  ESP_RETURN_ON_ERROR(esp_lcd_panel_init(s_panel_handle), TAG, "panel init2");
+  ESP_RETURN_ON_ERROR(esp_lcd_panel_mirror(s_panel_handle, false, false), TAG,
+                      "panel mirror");
+  ESP_RETURN_ON_ERROR(esp_lcd_panel_swap_xy(s_panel_handle, false), TAG,
+                      "panel swap");
+  ESP_RETURN_ON_ERROR(esp_lcd_panel_disp_on_off(s_panel_handle, true), TAG,
+                      "panel on");
+  ESP_RETURN_ON_ERROR(esp_lcd_panel_invert_color(s_panel_handle, true), TAG,
+                      "panel invert");
+
+  bsp_brightness_init();
+  bsp_brightness_set_level(80);
+  return ESP_OK;
+}
+
+static esp_err_t bsp_touch_init(void) {
+  const i2c_config_t i2c_conf = {
+      .mode = I2C_MODE_MASTER,
+      .sda_io_num = BSP_PIN_NUM_I2C_SDA,
+      .scl_io_num = BSP_PIN_NUM_I2C_SCL,
+      .sda_pullup_en = GPIO_PULLUP_ENABLE,
+      .scl_pullup_en = GPIO_PULLUP_ENABLE,
+      .master.clk_speed = 400000,
+  };
+
+  ESP_RETURN_ON_ERROR(i2c_param_config(BSP_I2C_NUM, &i2c_conf), TAG,
+                      "i2c param");
+  ESP_RETURN_ON_ERROR(i2c_driver_install(BSP_I2C_NUM, i2c_conf.mode, 0, 0, 0),
+                      TAG, "i2c install");
+
+  esp_lcd_panel_io_handle_t tp_io_handle = NULL;
+  esp_lcd_panel_io_i2c_config_t tp_io_config =
+      ESP_LCD_TOUCH_IO_I2C_CST816S_CONFIG();
+  /* Using legacy i2c driver (v1 API): scl_speed_hz must be zero. */
+  tp_io_config.scl_speed_hz = 0;
+  ESP_RETURN_ON_ERROR(
+      esp_lcd_new_panel_io_i2c((esp_lcd_i2c_bus_handle_t)BSP_I2C_NUM,
+                               &tp_io_config, &tp_io_handle),
+      TAG, "touch io");
+
+  esp_lcd_touch_config_t tp_cfg = {
+      .x_max = BSP_LCD_V_RES,
+      .y_max = BSP_LCD_H_RES,
+      .rst_gpio_num = -1,
+      .int_gpio_num = -1,
+      .flags =
+          {
+              .swap_xy = 0,
+              .mirror_x = 0,
+              .mirror_y = 0,
+          },
+  };
+
+  ESP_RETURN_ON_ERROR(
+      esp_lcd_touch_new_i2c_cst816s(tp_io_handle, &tp_cfg, &s_touch_handle),
+      TAG, "touch init");
+  return ESP_OK;
+}
+
+static esp_err_t bsp_lvgl_init(void) {
+  lv_init();
+  s_lvgl_mutex = xSemaphoreCreateRecursiveMutex();
+  if (!s_lvgl_mutex) {
+    return ESP_ERR_NO_MEM;
+  }
+
+  static lv_disp_draw_buf_t draw_buf;
+  const size_t buf_pixels = BSP_LCD_H_RES * 40;
+  lv_color_t *buf1 = heap_caps_malloc(buf_pixels * sizeof(lv_color_t),
+                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  lv_color_t *buf2 = heap_caps_malloc(buf_pixels * sizeof(lv_color_t),
+                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!buf1 || !buf2) {
+    return ESP_ERR_NO_MEM;
+  }
+  lv_disp_draw_buf_init(&draw_buf, buf1, buf2, buf_pixels);
+
+  lv_disp_drv_init(&s_disp_drv);
+  s_disp_drv.hor_res = BSP_LCD_H_RES;
+  s_disp_drv.ver_res = BSP_LCD_V_RES;
+  s_disp_drv.flush_cb = bsp_lvgl_flush_cb;
+  s_disp_drv.draw_buf = &draw_buf;
+  lv_disp_drv_register(&s_disp_drv);
+
+  static lv_indev_drv_t indev_drv;
+  lv_indev_drv_init(&indev_drv);
+  indev_drv.type = LV_INDEV_TYPE_POINTER;
+  indev_drv.read_cb = bsp_lvgl_touch_cb;
+  lv_indev_drv_register(&indev_drv);
+
+  const esp_timer_create_args_t tick_timer_args = {
+      .callback = bsp_increase_lvgl_tick,
+      .name = "lvgl_tick",
+  };
+  esp_timer_handle_t lvgl_tick_timer = NULL;
+  ESP_RETURN_ON_ERROR(esp_timer_create(&tick_timer_args, &lvgl_tick_timer), TAG,
+                      "tick timer create");
+  ESP_RETURN_ON_ERROR(
+      esp_timer_start_periodic(lvgl_tick_timer, BSP_LVGL_TICK_PERIOD_MS * 1000),
+      TAG, "tick timer start");
+
+  BaseType_t task_ok =
+      xTaskCreatePinnedToCore(bsp_lvgl_task, "lvgl_task", BSP_LVGL_TASK_STACK,
+                              NULL, BSP_LVGL_TASK_PRIORITY, NULL, 1);
+  if (task_ok != pdPASS) {
+    return ESP_FAIL;
+  }
+
+  return ESP_OK;
+}
+
+static esp_err_t bsp_button_init(void) {
+  /* Ensure any RTC settings are cleared for clean runtime operation */
+  rtc_gpio_hold_dis((gpio_num_t)BSP_BUTTON_GPIO);
+  rtc_gpio_deinit((gpio_num_t)BSP_BUTTON_GPIO);
+  gpio_reset_pin((gpio_num_t)BSP_BUTTON_GPIO);
+
+  const gpio_config_t io_conf = {
+      .pin_bit_mask = (1ULL << BSP_BUTTON_GPIO),
+      .mode = GPIO_MODE_INPUT,
+      .pull_up_en = GPIO_PULLUP_ENABLE,
+      .pull_down_en = GPIO_PULLDOWN_DISABLE,
+      .intr_type = GPIO_INTR_DISABLE,
+  };
+  return gpio_config(&io_conf);
+}
+
+static esp_err_t bsp_audio_init(void) {
+  i2s_chan_config_t chan_cfg =
+      I2S_CHANNEL_DEFAULT_CONFIG(BSP_I2S_PORT, I2S_ROLE_MASTER);
+  /* Increase DMA buffers to prevent cutting due to GUI processing latency */
+  chan_cfg.dma_desc_num = 12;
+  chan_cfg.dma_frame_num = 512;
+  ESP_RETURN_ON_ERROR(i2s_new_channel(&chan_cfg, NULL, &s_i2s_rx_handle), TAG,
+                      "i2s channel");
+
+  i2s_std_config_t std_cfg = {
+      .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(16000),
+      .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT,
+                                                      I2S_SLOT_MODE_STEREO),
+      .gpio_cfg =
+          {
+              .mclk = I2S_GPIO_UNUSED,
+              .bclk = BSP_MIC_BCLK_GPIO,
+              .ws = BSP_MIC_WS_GPIO,
+              .dout = I2S_GPIO_UNUSED,
+              .din = BSP_MIC_SD_GPIO,
+              .invert_flags =
+                  {
+                      .mclk_inv = false,
+                      .bclk_inv = false,
+                      .ws_inv = false,
+                  },
+          },
+  };
+  std_cfg.slot_cfg.slot_mask = I2S_STD_SLOT_BOTH;
+  ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(s_i2s_rx_handle, &std_cfg), TAG,
+                      "i2s std init");
+
+  /* Enable pull-down on I2S input pin to prevent floating noise during the
+   * inactive channel slot */
+  gpio_set_pull_mode(BSP_MIC_SD_GPIO, GPIO_PULLDOWN_ONLY);
+
+  ESP_RETURN_ON_ERROR(i2s_channel_enable(s_i2s_rx_handle), TAG, "i2s enable");
+  ESP_LOGI(TAG, "I2S mic init ok (BCLK=%d WS=%d SD=%d)", BSP_MIC_BCLK_GPIO,
+           BSP_MIC_WS_GPIO, BSP_MIC_SD_GPIO);
+  return ESP_OK;
+}
+
+static void bsp_wifi_event_handler(void *arg, esp_event_base_t event_base,
+                                   int32_t event_id, void *event_data) {
+  (void)arg;
+
+  if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+    esp_wifi_connect();
+  } else if (event_base == WIFI_EVENT &&
+             event_id == WIFI_EVENT_STA_DISCONNECTED) {
+    if (s_wifi_retry_num < BSP_WIFI_MAXIMUM_RETRY) {
+      esp_wifi_connect();
+      s_wifi_retry_num++;
+      ESP_LOGW(TAG, "Wi-Fi reconnect attempt %d/%d", s_wifi_retry_num,
+               BSP_WIFI_MAXIMUM_RETRY);
     } else {
-        data->state = LV_INDEV_STATE_RELEASED;
+      xEventGroupSetBits(s_wifi_event_group, BSP_WIFI_FAIL_BIT);
     }
+  } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+    ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
+    s_wifi_retry_num = 0;
+    ESP_LOGI(TAG, "Wi-Fi connected, got IP: " IPSTR,
+             IP2STR(&event->ip_info.ip));
+    xEventGroupSetBits(s_wifi_event_group, BSP_WIFI_CONNECTED_BIT);
+  }
 }
 
-static void bsp_lvgl_task(void *arg)
-{
-    (void)arg;
-    while (1) {
-        uint32_t task_delay_ms = BSP_LVGL_TASK_MAX_DELAY_MS;
+static esp_err_t bsp_wifi_init(void) {
+  s_wifi_event_group = xEventGroupCreate();
+  if (!s_wifi_event_group) {
+    return ESP_ERR_NO_MEM;
+  }
 
-        if (bsp_lvgl_lock(-1)) {
-            task_delay_ms = lv_timer_handler();
-            bsp_lvgl_unlock();
+  ESP_RETURN_ON_ERROR(esp_netif_init(), TAG, "esp_netif_init");
+  esp_err_t loop_err = esp_event_loop_create_default();
+  if (loop_err != ESP_OK && loop_err != ESP_ERR_INVALID_STATE) {
+    return loop_err;
+  }
+  esp_netif_create_default_wifi_sta();
+
+  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+  ESP_RETURN_ON_ERROR(esp_wifi_init(&cfg), TAG, "esp_wifi_init");
+
+  esp_event_handler_instance_t instance_any_id;
+  esp_event_handler_instance_t instance_got_ip;
+  ESP_RETURN_ON_ERROR(esp_event_handler_instance_register(
+                          WIFI_EVENT, ESP_EVENT_ANY_ID, &bsp_wifi_event_handler,
+                          NULL, &instance_any_id),
+                      TAG, "wifi event register");
+  ESP_RETURN_ON_ERROR(esp_event_handler_instance_register(
+                          IP_EVENT, IP_EVENT_STA_GOT_IP,
+                          &bsp_wifi_event_handler, NULL, &instance_got_ip),
+                      TAG, "ip event register");
+
+  wifi_config_t wifi_config = {0};
+  strlcpy((char *)wifi_config.sta.ssid, SECRET_WIFI_SSID,
+          sizeof(wifi_config.sta.ssid));
+  strlcpy((char *)wifi_config.sta.password, SECRET_WIFI_PASS,
+          sizeof(wifi_config.sta.password));
+  wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+  wifi_config.sta.pmf_cfg.capable = true;
+  wifi_config.sta.pmf_cfg.required = false;
+
+  ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_STA), TAG,
+                      "esp_wifi_set_mode");
+  ESP_RETURN_ON_ERROR(esp_wifi_set_config(WIFI_IF_STA, &wifi_config), TAG,
+                      "esp_wifi_set_config");
+  ESP_RETURN_ON_ERROR(esp_wifi_start(), TAG, "esp_wifi_start");
+
+  EventBits_t bits = xEventGroupWaitBits(
+      s_wifi_event_group, BSP_WIFI_CONNECTED_BIT | BSP_WIFI_FAIL_BIT, pdFALSE,
+      pdFALSE, pdMS_TO_TICKS(BSP_WIFI_WAIT_TIMEOUT_MS));
+
+  if (bits & BSP_WIFI_CONNECTED_BIT) {
+    ESP_LOGI(TAG, "Wi-Fi ready");
+    return ESP_OK;
+  }
+  if (bits & BSP_WIFI_FAIL_BIT) {
+    ESP_LOGE(TAG, "Wi-Fi failed after retries");
+    return ESP_FAIL;
+  }
+
+  ESP_LOGE(TAG, "Wi-Fi connection timeout");
+  return ESP_ERR_TIMEOUT;
+}
+
+static void bsp_sntp_sync(void) {
+  ESP_LOGI(TAG, "Initializing SNTP and waiting for sync...");
+  esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+  esp_sntp_setservername(0, "pool.ntp.org");
+  esp_sntp_init();
+
+  // Wait for time to be set
+  int retry = 0;
+  const int retry_count = 10;
+  while (sntp_get_sync_status() == SNTP_SYNC_STATUS_RESET &&
+         ++retry < retry_count) {
+    ESP_LOGI(TAG, "Waiting for system time to be set... (%d/%d)", retry,
+             retry_count);
+    vTaskDelay(pdMS_TO_TICKS(2000));
+  }
+}
+
+esp_err_t bsp_init(void) {
+  ESP_LOGI(TAG, "Init BSP");
+  ESP_RETURN_ON_ERROR(bsp_button_init(), TAG, "button init failed");
+  ESP_LOGI(TAG, "Button logic: Active=%d, Current Level=%d",
+           BSP_BUTTON_ACTIVE_LEVEL, gpio_get_level(BSP_BUTTON_GPIO));
+
+  ESP_RETURN_ON_ERROR(bsp_lcd_init(), TAG, "lcd init failed");
+  ESP_RETURN_ON_ERROR(bsp_touch_init(), TAG, "touch init failed");
+  ESP_RETURN_ON_ERROR(bsp_lvgl_init(), TAG, "lvgl init failed");
+  ESP_RETURN_ON_ERROR(bsp_audio_init(), TAG, "audio i2s init failed");
+  ESP_RETURN_ON_ERROR(bsp_wifi_init(), TAG, "wifi init failed");
+
+  if (bsp_wifi_is_ready()) {
+    bsp_sntp_sync();
+  }
+
+  return ESP_OK;
+}
+
+bool bsp_lvgl_lock(int timeout_ms) {
+  if (!s_lvgl_mutex) {
+    return false;
+  }
+  const TickType_t timeout_ticks =
+      (timeout_ms < 0) ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
+  return xSemaphoreTakeRecursive(s_lvgl_mutex, timeout_ticks) == pdTRUE;
+}
+
+void bsp_lvgl_unlock(void) {
+  if (s_lvgl_mutex) {
+    xSemaphoreGiveRecursive(s_lvgl_mutex);
+  }
+}
+
+esp_err_t bsp_display_show_status(const char *status_text) {
+  ESP_LOGI(TAG, "[DISPLAY][STATUS] %s", status_text ? status_text : "(null)");
+  return ESP_OK;
+}
+
+esp_err_t bsp_display_show_text(const char *body_text) {
+  ESP_LOGI(TAG, "[DISPLAY][TEXT] %s", body_text ? body_text : "(null)");
+  return ESP_OK;
+}
+
+static int s_last_raw_level = -1;
+
+bool bsp_button_is_pressed(void) {
+  int raw_level = gpio_get_level(BSP_BUTTON_GPIO);
+  if (raw_level != s_last_raw_level) {
+    ESP_LOGI(TAG, "GPIO %d changed from %d to %d (Active Level is %d)",
+             BSP_BUTTON_GPIO, s_last_raw_level, raw_level,
+             BSP_BUTTON_ACTIVE_LEVEL);
+    s_last_raw_level = raw_level;
+  }
+  return (raw_level == BSP_BUTTON_ACTIVE_LEVEL);
+}
+
+esp_err_t bsp_audio_capture_blocking(const bsp_audio_capture_cfg_t *cfg,
+                                     uint8_t *buffer, size_t buffer_len,
+                                     size_t *captured_bytes) {
+  if (!cfg || !buffer || !captured_bytes || buffer_len == 0) {
+    return ESP_ERR_INVALID_ARG;
+  }
+  if (!s_i2s_rx_handle) {
+    return ESP_ERR_INVALID_STATE;
+  }
+
+  const uint32_t sample_rate =
+      cfg->sample_rate_hz ? cfg->sample_rate_hz : 16000;
+  const size_t total_samples_target = (sample_rate * cfg->capture_ms) / 1000;
+  size_t total_out_samples = total_samples_target;
+  if (total_out_samples * sizeof(int16_t) > buffer_len) {
+    total_out_samples = buffer_len / sizeof(int16_t);
+  }
+
+  int16_t *out = (int16_t *)buffer;
+  size_t out_samples_written = 0;
+
+  /* Allocate larger read buffer to avoid rapid small reads overhead */
+  const size_t raw_chunk_size = 1024 * sizeof(int32_t);
+  int32_t *raw_chunk = malloc(raw_chunk_size);
+  if (!raw_chunk) {
+    ESP_LOGE(TAG, "Failed to allocate raw_chunk for audio");
+    return ESP_ERR_NO_MEM;
+  }
+
+  uint32_t timeout_count = 0;
+  esp_err_t final_ret = ESP_OK;
+
+  while (out_samples_written < total_out_samples) {
+    size_t samples_needed = total_out_samples - out_samples_written;
+    size_t bytes_to_read =
+        samples_needed * 2 * sizeof(int32_t); // Stereo, 32-bit
+    if (bytes_to_read > raw_chunk_size) {
+      bytes_to_read = raw_chunk_size;
+    }
+
+    size_t bytes_read = 0;
+    esp_err_t read_err =
+        i2s_channel_read(s_i2s_rx_handle, raw_chunk, bytes_to_read, &bytes_read,
+                         pdMS_TO_TICKS(1000));
+    if (read_err == ESP_ERR_TIMEOUT) {
+      timeout_count++;
+      ESP_LOGW(TAG, "I2S timeout (%lu); trying channel recovery",
+               timeout_count);
+      i2s_channel_disable(s_i2s_rx_handle);
+      vTaskDelay(pdMS_TO_TICKS(10));
+      i2s_channel_enable(s_i2s_rx_handle);
+
+      if (timeout_count > 3) {
+        /* If it fails multiple times, fill remaining with silence and break */
+        while (out_samples_written < total_out_samples) {
+          out[out_samples_written++] = 0;
         }
-
-        if (task_delay_ms > BSP_LVGL_TASK_MAX_DELAY_MS) {
-            task_delay_ms = BSP_LVGL_TASK_MAX_DELAY_MS;
-        } else if (task_delay_ms < BSP_LVGL_TASK_MIN_DELAY_MS) {
-            task_delay_ms = BSP_LVGL_TASK_MIN_DELAY_MS;
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(task_delay_ms));
+        ESP_LOGE(TAG, "I2S persistent timeout; returning silence. Check "
+                      "SD/BCLK/WS wiring.");
+        break;
+      }
+      continue;
     }
+
+    // Reset timeout count on successful read
+    timeout_count = 0;
+
+    if (read_err != ESP_OK) {
+      final_ret = read_err;
+      break;
+    }
+
+    size_t raw_samples = bytes_read / sizeof(int32_t);
+    for (size_t i = 0;
+         (i + 1) < raw_samples && out_samples_written < total_out_samples;
+         i += 2) {
+      /* INMP441 uses 24-bit samples in 32-bit slots.
+       * Shifting by 15 or 16 is typically used to get 16-bit PCM.
+       * 15-bit shift reduces clipping distortion compared to 14, keeping good
+       * volume. */
+      int32_t sample_l = raw_chunk[i] >> 15;
+      int32_t sample_r = raw_chunk[i + 1] >> 15;
+      int32_t sample = (abs(sample_l) >= abs(sample_r)) ? sample_l : sample_r;
+      if (sample > INT16_MAX) {
+        sample = INT16_MAX;
+      } else if (sample < INT16_MIN) {
+        sample = INT16_MIN;
+      }
+      out[out_samples_written++] = (int16_t)sample;
+    }
+  }
+
+  free(raw_chunk);
+
+  *captured_bytes = out_samples_written * sizeof(int16_t);
+  ESP_LOGI(TAG, "Audio captured: %u Hz, %u-bit, %u ch, %u ms, %u bytes",
+           (unsigned)cfg->sample_rate_hz, (unsigned)cfg->bits_per_sample,
+           (unsigned)cfg->channels, (unsigned)cfg->capture_ms,
+           (unsigned)*captured_bytes);
+
+  return final_ret;
 }
 
-static esp_err_t bsp_lcd_init(void)
-{
-    spi_bus_config_t buscfg = {
-        .sclk_io_num = BSP_PIN_NUM_LCD_SCLK,
-        .mosi_io_num = BSP_PIN_NUM_LCD_MOSI,
-        .miso_io_num = BSP_PIN_NUM_LCD_MISO,
-        .quadwp_io_num = -1,
-        .quadhd_io_num = -1,
-        .max_transfer_sz = BSP_LCD_H_RES * 80 * sizeof(lv_color_t),
-    };
-    ESP_RETURN_ON_ERROR(spi_bus_initialize(BSP_SPI_HOST, &buscfg, SPI_DMA_CH_AUTO), TAG, "spi init");
+/* ===========================================================================
+ * Wi-Fi status helper
+ * ===========================================================================
+ */
+bool bsp_wifi_is_ready(void) {
+  esp_netif_t *sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+  if (!sta)
+    return false;
+  esp_netif_ip_info_t ip = {0};
+  if (esp_netif_get_ip_info(sta, &ip) != ESP_OK)
+    return false;
+  return !ip4_addr_isany_val(ip.ip);
+}
 
-    esp_lcd_panel_io_handle_t io_handle = NULL;
-    esp_lcd_panel_io_spi_config_t io_config = {
-        .dc_gpio_num = BSP_PIN_NUM_LCD_DC,
-        .cs_gpio_num = BSP_PIN_NUM_LCD_CS,
-        .pclk_hz = BSP_LCD_PIXEL_CLOCK_HZ,
-        .lcd_cmd_bits = 8,
-        .lcd_param_bits = 8,
-        .spi_mode = 0,
-        .trans_queue_depth = 10,
-        .on_color_trans_done = bsp_notify_lvgl_flush_ready,
-    };
-    ESP_RETURN_ON_ERROR(
-        esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)BSP_SPI_HOST, &io_config, &io_handle),
-        TAG,
-        "panel io init"
-    );
+/* ===========================================================================
+ * SD Card (SPI via sdspi + FATFS)
+ * ===========================================================================
+ */
+#define SD_MOUNT_POINT "/sdcard"
 
-    esp_lcd_panel_dev_config_t panel_config = {
-        .reset_gpio_num = BSP_PIN_NUM_LCD_RST,
-        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
-        .bits_per_pixel = 16,
-    };
-    ESP_RETURN_ON_ERROR(esp_lcd_new_panel_st7789(io_handle, &panel_config, &s_panel_handle), TAG, "panel init");
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_reset(s_panel_handle), TAG, "panel reset");
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_init(s_panel_handle), TAG, "panel init2");
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_mirror(s_panel_handle, false, false), TAG, "panel mirror");
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_swap_xy(s_panel_handle, false), TAG, "panel swap");
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_disp_on_off(s_panel_handle, true), TAG, "panel on");
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_invert_color(s_panel_handle, true), TAG, "panel invert");
+static sdmmc_card_t *s_sd_card = NULL;
+static bool s_sd_spi_bus_initialized = false;
 
-    gpio_set_direction(BSP_LCD_BK_LIGHT_GPIO, GPIO_MODE_OUTPUT);
-    gpio_set_level(BSP_LCD_BK_LIGHT_GPIO, 1);
+bool bsp_sdcard_is_present(void) {
+  /* Waveshare board has no CD pin — assume present after detect_init succeeds
+   */
+  return s_sd_spi_bus_initialized;
+}
+
+esp_err_t bsp_sdcard_detect_init(void) {
+  if (s_sd_spi_bus_initialized) {
     return ESP_OK;
+  }
+
+  /* Initialise SPI bus shared with SD card */
+  spi_bus_config_t bus_cfg = {
+      .mosi_io_num = BSP_SD_MOSI_GPIO,
+      .miso_io_num = BSP_SD_MISO_GPIO,
+      .sclk_io_num = BSP_SD_CLK_GPIO,
+      .quadwp_io_num = -1,
+      .quadhd_io_num = -1,
+      .max_transfer_sz = 4000,
+  };
+
+  /* SPI2_HOST is shared with LCD on this board */
+  esp_err_t ret = spi_bus_initialize(SPI2_HOST, &bus_cfg, SDSPI_DEFAULT_DMA);
+  if (ret == ESP_ERR_INVALID_STATE) {
+    /* Bus already initialised by LCD driver — accept */
+    ESP_LOGW("bsp_sd", "SPI2 bus already initialized, sharing with LCD");
+  } else if (ret != ESP_OK) {
+    ESP_LOGE("bsp_sd", "SPI bus init failed: %s", esp_err_to_name(ret));
+    return ret;
+  }
+
+  s_sd_spi_bus_initialized = true;
+  ESP_LOGI("bsp_sd", "SD card SPI bus ready (MOSI=%d MISO=%d CLK=%d CS=%d)",
+           BSP_SD_MOSI_GPIO, BSP_SD_MISO_GPIO, BSP_SD_CLK_GPIO, BSP_SD_CS_GPIO);
+  return ESP_OK;
 }
 
-static esp_err_t bsp_touch_init(void)
-{
-    const i2c_config_t i2c_conf = {
-        .mode = I2C_MODE_MASTER,
-        .sda_io_num = BSP_PIN_NUM_I2C_SDA,
-        .scl_io_num = BSP_PIN_NUM_I2C_SCL,
-        .sda_pullup_en = GPIO_PULLUP_ENABLE,
-        .scl_pullup_en = GPIO_PULLUP_ENABLE,
-        .master.clk_speed = 400000,
-    };
+esp_err_t bsp_sdcard_mount(void) {
+  if (s_sd_card != NULL) {
+    return ESP_OK; /* already mounted */
+  }
+  if (!s_sd_spi_bus_initialized) {
+    esp_err_t det = bsp_sdcard_detect_init();
+    if (det != ESP_OK)
+      return det;
+  }
 
-    ESP_RETURN_ON_ERROR(i2c_param_config(BSP_I2C_NUM, &i2c_conf), TAG, "i2c param");
-    ESP_RETURN_ON_ERROR(i2c_driver_install(BSP_I2C_NUM, i2c_conf.mode, 0, 0, 0), TAG, "i2c install");
+  esp_vfs_fat_sdmmc_mount_config_t mount_cfg = {
+      .format_if_mount_failed = false,
+      .max_files = 8,
+      .allocation_unit_size = 16 * 1024,
+  };
 
-    esp_lcd_panel_io_handle_t tp_io_handle = NULL;
-    esp_lcd_panel_io_i2c_config_t tp_io_config = ESP_LCD_TOUCH_IO_I2C_CST816S_CONFIG();
-    /* Using legacy i2c driver (v1 API): scl_speed_hz must be zero. */
-    tp_io_config.scl_speed_hz = 0;
-    ESP_RETURN_ON_ERROR(
-        esp_lcd_new_panel_io_i2c((esp_lcd_i2c_bus_handle_t)BSP_I2C_NUM, &tp_io_config, &tp_io_handle),
-        TAG,
-        "touch io"
-    );
+  sdmmc_host_t host = SDSPI_HOST_DEFAULT();
+  host.slot = SPI2_HOST;
+  host.max_freq_khz = 10000; /* 10 MHz — conservative for long traces */
 
-    esp_lcd_touch_config_t tp_cfg = {
-        .x_max = BSP_LCD_V_RES,
-        .y_max = BSP_LCD_H_RES,
-        .rst_gpio_num = -1,
-        .int_gpio_num = -1,
-        .flags = {
-            .swap_xy = 0,
-            .mirror_x = 0,
-            .mirror_y = 0,
-        },
-    };
+  sdspi_device_config_t slot_cfg = SDSPI_DEVICE_CONFIG_DEFAULT();
+  slot_cfg.gpio_cs = BSP_SD_CS_GPIO;
+  slot_cfg.host_id = SPI2_HOST;
 
-    ESP_RETURN_ON_ERROR(esp_lcd_touch_new_i2c_cst816s(tp_io_handle, &tp_cfg, &s_touch_handle), TAG, "touch init");
+  esp_err_t ret = esp_vfs_fat_sdspi_mount(SD_MOUNT_POINT, &host, &slot_cfg,
+                                          &mount_cfg, &s_sd_card);
+  if (ret != ESP_OK) {
+    ESP_LOGW("bsp_sd", "SD mount failed: %s", esp_err_to_name(ret));
+    s_sd_card = NULL;
+    return ret;
+  }
+
+  ESP_LOGI("bsp_sd", "SD card mounted at %s", SD_MOUNT_POINT);
+  sdmmc_card_print_info(stdout, s_sd_card);
+  return ESP_OK;
+}
+
+esp_err_t bsp_sdcard_unmount(void) {
+  if (!s_sd_card)
     return ESP_OK;
+  esp_err_t ret = esp_vfs_fat_sdcard_unmount(SD_MOUNT_POINT, s_sd_card);
+  if (ret == ESP_OK) {
+    s_sd_card = NULL;
+    ESP_LOGI("bsp_sd", "SD card unmounted");
+  }
+  return ret;
 }
 
-static esp_err_t bsp_lvgl_init(void)
-{
-    lv_init();
-    s_lvgl_mutex = xSemaphoreCreateRecursiveMutex();
-    if (!s_lvgl_mutex) {
-        return ESP_ERR_NO_MEM;
+/* ===========================================================================
+ * Deep Sleep Management
+ * ===========================================================================
+ */
+void bsp_enter_deep_sleep(void) {
+  ESP_LOGI("bsp_sleep", "Entering Deep Sleep Mode...");
+
+  /* Turn off LCD backlight */
+  ledc_set_duty(LCD_BL_LEDC_MODE, LCD_BL_LEDC_CHANNEL, 0);
+  ledc_update_duty(LCD_BL_LEDC_MODE, LCD_BL_LEDC_CHANNEL);
+
+  /* Turn off LCD display to save power */
+  if (s_panel_handle) {
+    esp_lcd_panel_disp_on_off(s_panel_handle, false);
+  }
+
+  /* Unmount SD Card cleanly before sleeping */
+  bsp_sdcard_unmount();
+
+  /* Configure Wakeup Source: Physical Button (Active-Low during sleep) */
+  rtc_gpio_init((gpio_num_t)BSP_BUTTON_GPIO);
+  rtc_gpio_set_direction((gpio_num_t)BSP_BUTTON_GPIO, RTC_GPIO_MODE_INPUT_ONLY);
+  /* Retain internal pull-up during deep sleep via RTC controller */
+  rtc_gpio_pullup_en((gpio_num_t)BSP_BUTTON_GPIO);
+  rtc_gpio_pulldown_dis((gpio_num_t)BSP_BUTTON_GPIO);
+
+  /* Give it a moment to stabilize */
+  vTaskDelay(pdMS_TO_TICKS(20));
+
+  /* Check state - if it's already LOW, sleep would trigger immediately */
+  if (rtc_gpio_get_level((gpio_num_t)BSP_BUTTON_GPIO) == 0) {
+    ESP_LOGW("bsp_sleep",
+             "Button is already LOW (pressed?). Waiting for release...");
+    while (rtc_gpio_get_level((gpio_num_t)BSP_BUTTON_GPIO) == 0) {
+      vTaskDelay(pdMS_TO_TICKS(50));
     }
+    ESP_LOGI("bsp_sleep", "Button released, proceeding to sleep.");
+  }
 
-    static lv_disp_draw_buf_t draw_buf;
-    const size_t buf_pixels = BSP_LCD_H_RES * 40;
-    lv_color_t *buf1 = heap_caps_malloc(buf_pixels * sizeof(lv_color_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    lv_color_t *buf2 = heap_caps_malloc(buf_pixels * sizeof(lv_color_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (!buf1 || !buf2) {
-        return ESP_ERR_NO_MEM;
-    }
-    lv_disp_draw_buf_init(&draw_buf, buf1, buf2, buf_pixels);
+  /* Hold the GPIO state during deep sleep */
+  rtc_gpio_hold_en((gpio_num_t)BSP_BUTTON_GPIO);
 
-    lv_disp_drv_init(&s_disp_drv);
-    s_disp_drv.hor_res = BSP_LCD_H_RES;
-    s_disp_drv.ver_res = BSP_LCD_V_RES;
-    s_disp_drv.flush_cb = bsp_lvgl_flush_cb;
-    s_disp_drv.draw_buf = &draw_buf;
-    lv_disp_drv_register(&s_disp_drv);
+  /* Use ext1 wakeup on LOW level */
+  esp_sleep_enable_ext1_wakeup(1ULL << BSP_BUTTON_GPIO,
+                               ESP_EXT1_WAKEUP_ANY_LOW);
 
-    static lv_indev_drv_t indev_drv;
-    lv_indev_drv_init(&indev_drv);
-    indev_drv.type = LV_INDEV_TYPE_POINTER;
-    indev_drv.read_cb = bsp_lvgl_touch_cb;
-    lv_indev_drv_register(&indev_drv);
-
-    const esp_timer_create_args_t tick_timer_args = {
-        .callback = bsp_increase_lvgl_tick,
-        .name = "lvgl_tick",
-    };
-    esp_timer_handle_t lvgl_tick_timer = NULL;
-    ESP_RETURN_ON_ERROR(esp_timer_create(&tick_timer_args, &lvgl_tick_timer), TAG, "tick timer create");
-    ESP_RETURN_ON_ERROR(
-        esp_timer_start_periodic(lvgl_tick_timer, BSP_LVGL_TICK_PERIOD_MS * 1000),
-        TAG,
-        "tick timer start"
-    );
-
-    BaseType_t task_ok = xTaskCreatePinnedToCore(
-        bsp_lvgl_task,
-        "lvgl_task",
-        BSP_LVGL_TASK_STACK,
-        NULL,
-        BSP_LVGL_TASK_PRIORITY,
-        NULL,
-        1
-    );
-    if (task_ok != pdPASS) {
-        return ESP_FAIL;
-    }
-
-    return ESP_OK;
-}
-
-static esp_err_t bsp_button_init(void)
-{
-    const gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << BSP_BUTTON_GPIO),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    return gpio_config(&io_conf);
-}
-
-static esp_err_t bsp_audio_init(void)
-{
-    const i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(BSP_I2S_PORT, I2S_ROLE_MASTER);
-    ESP_RETURN_ON_ERROR(i2s_new_channel(&chan_cfg, NULL, &s_i2s_rx_handle), TAG, "i2s channel");
-
-    i2s_std_config_t std_cfg = {
-        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(16000),
-        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_STEREO),
-        .gpio_cfg = {
-            .mclk = I2S_GPIO_UNUSED,
-            .bclk = BSP_MIC_BCLK_GPIO,
-            .ws = BSP_MIC_WS_GPIO,
-            .dout = I2S_GPIO_UNUSED,
-            .din = BSP_MIC_SD_GPIO,
-            .invert_flags = {
-                .mclk_inv = false,
-                .bclk_inv = false,
-                .ws_inv = false,
-            },
-        },
-    };
-    std_cfg.slot_cfg.slot_mask = I2S_STD_SLOT_BOTH;
-    ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(s_i2s_rx_handle, &std_cfg), TAG, "i2s std init");
-    ESP_RETURN_ON_ERROR(i2s_channel_enable(s_i2s_rx_handle), TAG, "i2s enable");
-    ESP_LOGI(TAG, "I2S mic init ok (BCLK=%d WS=%d SD=%d)", BSP_MIC_BCLK_GPIO, BSP_MIC_WS_GPIO, BSP_MIC_SD_GPIO);
-    return ESP_OK;
-}
-
-static void bsp_wifi_event_handler(
-    void *arg,
-    esp_event_base_t event_base,
-    int32_t event_id,
-    void *event_data
-)
-{
-    (void)arg;
-
-    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-        esp_wifi_connect();
-    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        if (s_wifi_retry_num < BSP_WIFI_MAXIMUM_RETRY) {
-            esp_wifi_connect();
-            s_wifi_retry_num++;
-            ESP_LOGW(TAG, "Wi-Fi reconnect attempt %d/%d", s_wifi_retry_num, BSP_WIFI_MAXIMUM_RETRY);
-        } else {
-            xEventGroupSetBits(s_wifi_event_group, BSP_WIFI_FAIL_BIT);
-        }
-    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-        ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-        s_wifi_retry_num = 0;
-        ESP_LOGI(TAG, "Wi-Fi connected, got IP: " IPSTR, IP2STR(&event->ip_info.ip));
-        xEventGroupSetBits(s_wifi_event_group, BSP_WIFI_CONNECTED_BIT);
-    }
-}
-
-static esp_err_t bsp_wifi_init(void)
-{
-    s_wifi_event_group = xEventGroupCreate();
-    if (!s_wifi_event_group) {
-        return ESP_ERR_NO_MEM;
-    }
-
-    ESP_RETURN_ON_ERROR(esp_netif_init(), TAG, "esp_netif_init");
-    esp_err_t loop_err = esp_event_loop_create_default();
-    if (loop_err != ESP_OK && loop_err != ESP_ERR_INVALID_STATE) {
-        return loop_err;
-    }
-    esp_netif_create_default_wifi_sta();
-
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_RETURN_ON_ERROR(esp_wifi_init(&cfg), TAG, "esp_wifi_init");
-
-    esp_event_handler_instance_t instance_any_id;
-    esp_event_handler_instance_t instance_got_ip;
-    ESP_RETURN_ON_ERROR(
-        esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &bsp_wifi_event_handler, NULL, &instance_any_id),
-        TAG,
-        "wifi event register"
-    );
-    ESP_RETURN_ON_ERROR(
-        esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &bsp_wifi_event_handler, NULL, &instance_got_ip),
-        TAG,
-        "ip event register"
-    );
-
-    wifi_config_t wifi_config = {0};
-    strlcpy((char *)wifi_config.sta.ssid, SECRET_WIFI_SSID, sizeof(wifi_config.sta.ssid));
-    strlcpy((char *)wifi_config.sta.password, SECRET_WIFI_PASS, sizeof(wifi_config.sta.password));
-    wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
-    wifi_config.sta.pmf_cfg.capable = true;
-    wifi_config.sta.pmf_cfg.required = false;
-
-    ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_STA), TAG, "esp_wifi_set_mode");
-    ESP_RETURN_ON_ERROR(esp_wifi_set_config(WIFI_IF_STA, &wifi_config), TAG, "esp_wifi_set_config");
-    ESP_RETURN_ON_ERROR(esp_wifi_start(), TAG, "esp_wifi_start");
-
-    EventBits_t bits = xEventGroupWaitBits(
-        s_wifi_event_group,
-        BSP_WIFI_CONNECTED_BIT | BSP_WIFI_FAIL_BIT,
-        pdFALSE,
-        pdFALSE,
-        pdMS_TO_TICKS(BSP_WIFI_WAIT_TIMEOUT_MS)
-    );
-
-    if (bits & BSP_WIFI_CONNECTED_BIT) {
-        ESP_LOGI(TAG, "Wi-Fi ready");
-        return ESP_OK;
-    }
-    if (bits & BSP_WIFI_FAIL_BIT) {
-        ESP_LOGE(TAG, "Wi-Fi failed after retries");
-        return ESP_FAIL;
-    }
-
-    ESP_LOGE(TAG, "Wi-Fi connection timeout");
-    return ESP_ERR_TIMEOUT;
-}
-
-esp_err_t bsp_init(void)
-{
-    ESP_LOGI(TAG, "Init BSP");
-    ESP_RETURN_ON_ERROR(bsp_lcd_init(), TAG, "lcd init failed");
-    ESP_RETURN_ON_ERROR(bsp_touch_init(), TAG, "touch init failed");
-    ESP_RETURN_ON_ERROR(bsp_lvgl_init(), TAG, "lvgl init failed");
-    ESP_RETURN_ON_ERROR(bsp_button_init(), TAG, "button init failed");
-    ESP_RETURN_ON_ERROR(bsp_audio_init(), TAG, "audio i2s init failed");
-    ESP_RETURN_ON_ERROR(bsp_wifi_init(), TAG, "wifi init failed");
-    return ESP_OK;
-}
-
-bool bsp_lvgl_lock(int timeout_ms)
-{
-    if (!s_lvgl_mutex) {
-        return false;
-    }
-    const TickType_t timeout_ticks = (timeout_ms < 0) ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
-    return xSemaphoreTakeRecursive(s_lvgl_mutex, timeout_ticks) == pdTRUE;
-}
-
-void bsp_lvgl_unlock(void)
-{
-    if (s_lvgl_mutex) {
-        xSemaphoreGiveRecursive(s_lvgl_mutex);
-    }
-}
-
-esp_err_t bsp_display_show_status(const char *status_text)
-{
-    ESP_LOGI(TAG, "[DISPLAY][STATUS] %s", status_text ? status_text : "(null)");
-    return ESP_OK;
-}
-
-esp_err_t bsp_display_show_text(const char *body_text)
-{
-    ESP_LOGI(TAG, "[DISPLAY][TEXT] %s", body_text ? body_text : "(null)");
-    return ESP_OK;
-}
-
-bool bsp_button_is_pressed(void)
-{
-    return gpio_get_level(BSP_BUTTON_GPIO) == BSP_BUTTON_ACTIVE_LEVEL;
-}
-
-esp_err_t bsp_audio_capture_blocking(
-    const bsp_audio_capture_cfg_t *cfg,
-    uint8_t *buffer,
-    size_t buffer_len,
-    size_t *captured_bytes
-)
-{
-    if (!cfg || !buffer || !captured_bytes || buffer_len == 0) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    if (!s_i2s_rx_handle) {
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    const uint32_t sample_rate = cfg->sample_rate_hz ? cfg->sample_rate_hz : 16000;
-    const size_t total_samples_target = (sample_rate * cfg->capture_ms) / 1000;
-    size_t total_out_samples = total_samples_target;
-    if (total_out_samples * sizeof(int16_t) > buffer_len) {
-        total_out_samples = buffer_len / sizeof(int16_t);
-    }
-
-    int16_t *out = (int16_t *)buffer;
-    size_t out_samples_written = 0;
-    int32_t raw_chunk[256];
-
-    uint32_t timeout_count = 0;
-    while (out_samples_written < total_out_samples) {
-        size_t bytes_read = 0;
-        esp_err_t read_err = i2s_channel_read(
-            s_i2s_rx_handle,
-            raw_chunk,
-            sizeof(raw_chunk),
-            &bytes_read,
-            pdMS_TO_TICKS(350)
-        );
-        if (read_err == ESP_ERR_TIMEOUT) {
-            timeout_count++;
-            if (timeout_count == 1) {
-                ESP_LOGW(TAG, "I2S timeout; trying channel recovery");
-                i2s_channel_disable(s_i2s_rx_handle);
-                i2s_channel_enable(s_i2s_rx_handle);
-                continue;
-            }
-
-            /* If there is still no data, return silence instead of failing hard. */
-            while (out_samples_written < total_out_samples) {
-                out[out_samples_written++] = 0;
-            }
-            ESP_LOGW(TAG, "I2S no data from mic; returning silence. Check SD/BCLK/WS wiring and L/R pin.");
-            break;
-        }
-        if (read_err != ESP_OK) {
-            return read_err;
-        }
-
-        size_t raw_samples = bytes_read / sizeof(int32_t);
-        for (size_t i = 0; (i + 1) < raw_samples && out_samples_written < total_out_samples; i += 2) {
-            /* Interleaved stereo frames: pick the stronger channel (L/R pin agnostic). */
-            int32_t sample_l = raw_chunk[i] >> 12;
-            int32_t sample_r = raw_chunk[i + 1] >> 12;
-            int32_t sample = (abs(sample_l) >= abs(sample_r)) ? sample_l : sample_r;
-            if (sample > INT16_MAX) {
-                sample = INT16_MAX;
-            } else if (sample < INT16_MIN) {
-                sample = INT16_MIN;
-            }
-            out[out_samples_written++] = (int16_t)sample;
-        }
-    }
-
-    *captured_bytes = out_samples_written * sizeof(int16_t);
-    ESP_LOGI(
-        TAG,
-        "Audio captured: %u Hz, %u-bit, %u ch, %u ms, %u bytes",
-        (unsigned)cfg->sample_rate_hz,
-        (unsigned)cfg->bits_per_sample,
-        (unsigned)cfg->channels,
-        (unsigned)cfg->capture_ms,
-        (unsigned)*captured_bytes
-    );
-
-    return ESP_OK;
+  /* Enter Deep Sleep */
+  esp_deep_sleep_start();
 }
