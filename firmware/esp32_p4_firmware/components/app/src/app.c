@@ -41,10 +41,9 @@ esp_err_t gui_show_camera_preview_rgb565(const uint8_t *rgb565_data,
 #define APP_PREVIEW_REFRESH_MS 220
 #define APP_RESPONSE_TEXT_MAX 512
 #define APP_RESPONSE_SCROLL_STEP_PX 22
-#define APP_AI_ENDPOINT "https://api.openai.com/v1/chat/completions"
-#define APP_AI_HOST "api.openai.com"
+#define APP_RESPONSE_TEXT_MAX 512
+#define APP_RESPONSE_SCROLL_STEP_PX 22
 #define APP_AI_MODEL_AUDIO_TEXT "gpt-4o-audio-preview"
-#define APP_AI_MODEL_AUDIO_IMAGE_TEXT "gpt-4o"
 #define APP_HTTP_TIMEOUT_MS 45000
 
 typedef enum {
@@ -93,7 +92,7 @@ static app_expert_profile_t s_expert_profile = APP_EXPERT_PROFILE_GENERAL;
 static char s_last_response[APP_RESPONSE_TEXT_MAX] =
     "Pronto.\nSegure encoder e fale.";
 
-/* Long-press config portal: encoder + btn1 simultaneos por 10 s */
+/* Long-press config portal: btn2 + btn3 simultaneos por 10 s */
 #define APP_CONFIG_PORTAL_LONGPRESS_MS 10000
 static TickType_t s_config_longpress_start = 0;
 static bool s_config_longpress_active = false;
@@ -425,6 +424,7 @@ static esp_err_t app_build_ai_request_json(
     cJSON_Delete(root);
     return ESP_ERR_NO_MEM;
   }
+  const char *personality = config_manager_get()->ai_personality;
   const char *profile_text = (system_profile_text && system_profile_text[0])
                                  ? system_profile_text
                                  : "";
@@ -441,8 +441,9 @@ static esp_err_t app_build_ai_request_json(
       "Maximo 60 palavras. Quebre linhas a cada ~30 chars para caber na tela. "
       "Nunca recuse responder. Se nao tiver certeza, diga o que ve e sua "
       "melhor hipotese. "
+      "Aja de acordo com esta personalidade customizada: %s\n"
       "%s",
-      profile_text);
+      personality, profile_text);
   cJSON_AddStringToObject(system_msg, "content", system_content);
   free(system_content);
   cJSON_AddItemToArray(messages, system_msg);
@@ -475,7 +476,7 @@ static esp_err_t app_build_ai_request_json(
     cJSON_AddItemToObject(image_part, "image_url", image_obj);
     cJSON_AddItemToArray(user_content, image_part);
   } else {
-    // Audio-only path: keep original input_audio payload.
+    // Audio-only path: keep original input_audio payload for OpenAI extension.
     if (!audio_b64) {
       cJSON_Delete(root);
       return ESP_ERR_INVALID_ARG;
@@ -515,24 +516,9 @@ static esp_err_t app_build_ai_request_json(
   return ESP_OK;
 }
 
-static esp_err_t app_check_dns_ready(void) {
-  struct addrinfo hints = {0};
-  struct addrinfo *res = NULL;
-  hints.ai_family = AF_UNSPEC;
-  hints.ai_socktype = SOCK_STREAM;
-
-  int rc = getaddrinfo(APP_AI_HOST, NULL, &hints, &res);
-  if (rc != 0 || !res) {
-    ESP_LOGE(TAG, "DNS lookup failed for %s (rc=%d)", APP_AI_HOST, rc);
-    if (res) {
-      freeaddrinfo(res);
-    }
-    return ESP_ERR_NOT_FOUND;
-  }
-
-  freeaddrinfo(res);
-  return ESP_OK;
-}
+/* app_check_dns_ready has been removed because DNS pre-check is skipped
+ * for arbitrary dynamic endpoints, the HTTP client will fail gracefully
+ * if the host does not exist or network is unavailable. */
 
 static bool app_log_network_status(void) {
   esp_netif_t *sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
@@ -574,7 +560,7 @@ static esp_err_t app_http_post_json(const char *request_json,
   resp->cap = 0;
 
   esp_http_client_config_t config = {
-      .url = APP_AI_ENDPOINT,
+      .url = config_manager_get()->ai_base_url,
       .timeout_ms = APP_HTTP_TIMEOUT_MS,
       .crt_bundle_attach = esp_crt_bundle_attach,
   };
@@ -692,20 +678,12 @@ static esp_err_t app_call_ai_with_audio(const uint8_t *wav_data, size_t wav_len,
     return ESP_ERR_INVALID_STATE;
   }
 
-  /* Keep S3-like behavior: DNS precheck is best-effort and should not
-   * block the request path when Wi-Fi is already connected.
+  /* Keep S3-like behavior: we used to do a DNS precheck here when host was
+   * fixed. Since host is now totally dynamic (it could even be an IP address
+   * like 192.168.1.50 without DNS needed), we skip the extra getaddrinfo hurdle
+   * and rely on the HTTP client internal routines to fail gracefully if
+   * unreachable.
    */
-  esp_err_t dns_err = ESP_FAIL;
-  for (int i = 0; i < 3; i++) {
-    dns_err = app_check_dns_ready();
-    if (dns_err == ESP_OK) {
-      break;
-    }
-    vTaskDelay(pdMS_TO_TICKS(250));
-  }
-  if (dns_err != ESP_OK) {
-    ESP_LOGW(TAG, "DNS precheck failed, proceeding with HTTPS request anyway");
-  }
 
   char *audio_b64 = app_base64_encode(wav_data, wav_len);
   if (!audio_b64) {
@@ -779,7 +757,12 @@ static esp_err_t app_call_ai_with_audio(const uint8_t *wav_data, size_t wav_len,
              "Se ruidoso, faca sua melhor tentativa. "
              "Vocabulario tecnico esperado: %s.",
              app_profile_transcription_terms(s_expert_profile));
-    err = app_call_ai_once(APP_AI_MODEL_AUDIO_TEXT, audio_b64, NULL,
+
+    const char *audio_model =
+        (strcmp(config_manager_get()->ai_model, "gpt-4o") == 0)
+            ? APP_AI_MODEL_AUDIO_TEXT
+            : config_manager_get()->ai_model;
+    err = app_call_ai_once(audio_model, audio_b64, NULL,
                            app_profile_system_prompt(s_expert_profile), NULL,
                            transcription_prompt, transcript_text,
                            sizeof(transcript_text));
@@ -814,12 +797,13 @@ static esp_err_t app_call_ai_with_audio(const uint8_t *wav_data, size_t wav_len,
         "5. Nunca diga apenas 'nao sei'. Sempre ofereca sua melhor analise.",
         transcript_text);
 
-    err = app_call_ai_once(APP_AI_MODEL_AUDIO_IMAGE_TEXT, NULL, image_data_url,
+    err = app_call_ai_once(config_manager_get()->ai_model, NULL, image_data_url,
                            app_profile_system_prompt(s_expert_profile),
                            vision_prompt, NULL, out_text, out_text_len);
     free(vision_prompt);
   } else {
     // Modo somente audio
+    ESP_LOGI(TAG, "Audio-only path initiated");
     char *audio_only_prompt = malloc(APP_RESPONSE_TEXT_MAX);
     if (!audio_only_prompt) {
       free(audio_b64);
@@ -833,7 +817,11 @@ static esp_err_t app_call_ai_with_audio(const uint8_t *wav_data, size_t wav_len,
              "Nunca diga 'nao entendi' sem tentar responder. "
              "Vocabulario tecnico relevante: %s.",
              app_profile_transcription_terms(s_expert_profile));
-    err = app_call_ai_once(APP_AI_MODEL_AUDIO_TEXT, audio_b64, NULL,
+    const char *audio_model =
+        (strcmp(config_manager_get()->ai_model, "gpt-4o") == 0)
+            ? APP_AI_MODEL_AUDIO_TEXT
+            : config_manager_get()->ai_model;
+    err = app_call_ai_once(audio_model, audio_b64, NULL,
                            app_profile_system_prompt(s_expert_profile), NULL,
                            audio_only_prompt, out_text, out_text_len);
     free(audio_only_prompt);
@@ -1416,16 +1404,16 @@ static void app_task(void *arg) {
       }
 
       /* --------------------------------------------------------
-       * Detecção de Long-Press: Encoder + Btn1 por 10 s
+       * Detecção de Long-Press: Btn2 + Btn3 por 10 s
        * Abre o Captive Portal de configuração
        * -------------------------------------------------------- */
       const bool both_pressed =
-          bsp_button_is_pressed() && bsp_photo_button_is_pressed();
+          bsp_button2_is_pressed() && bsp_button3_is_pressed();
       if (both_pressed) {
         if (!s_config_longpress_active) {
           s_config_longpress_active = true;
           s_config_longpress_start = xTaskGetTickCount();
-          ESP_LOGI(TAG, "Config portal long-press started");
+          ESP_LOGI(TAG, "Config portal long-press started (Btn2+Btn3)");
         } else {
           const uint32_t held_ms = (uint32_t)pdTICKS_TO_MS(
               xTaskGetTickCount() - s_config_longpress_start);
@@ -1448,6 +1436,8 @@ static void app_task(void *arg) {
 
       s_prev_encoder_pressed = encoder_now_pressed;
       s_prev_photo_button_pressed = photo_button_now_pressed;
+      s_prev_btn2_pressed = bsp_button2_is_pressed();
+      s_prev_btn3_pressed = bsp_button3_is_pressed();
     }
   }
 }

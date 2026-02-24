@@ -16,6 +16,8 @@ extern "C" {
 #define CONFIG_AI_TOKEN_MAX 220 /* Tokens OpenAI svcacct chegam a ~180 chars   \
                                  */
 #define CONFIG_AI_PERSONALITY_MAX 256
+#define CONFIG_AI_BASE_URL_MAX 128
+#define CONFIG_AI_MODEL_MAX 64
 
 /* -----------------------------------------------------------------------
  * Estrutura principal de configuração
@@ -28,6 +30,8 @@ typedef struct {
   /* IA */
   char ai_token[CONFIG_AI_TOKEN_MAX];
   char ai_personality[CONFIG_AI_PERSONALITY_MAX];
+  char ai_base_url[CONFIG_AI_BASE_URL_MAX];
+  char ai_model[CONFIG_AI_MODEL_MAX];
 
   /* Hardware */
   uint8_t volume;     /* 0–100 */
@@ -79,7 +83,9 @@ esp_err_t config_manager_save(void);
  */
 esp_err_t config_manager_update_and_save(const char *ssid, const char *pass,
                                          const char *ai_token,
-                                         const char *ai_personality);
+                                         const char *ai_personality,
+                                         const char *ai_base_url,
+                                         const char *ai_model);
 
 #ifdef __cplusplus
 }

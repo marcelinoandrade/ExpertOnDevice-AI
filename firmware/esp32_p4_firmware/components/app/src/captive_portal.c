@@ -59,6 +59,11 @@ static const char *s_html_page =
     "maxlength='63'>"
     "<label>Token OpenAI (sk-...)</label>"
     "<input name='token' maxlength='219' required>"
+    "<label>URL Base da IA</label>"
+    "<input name='base_url' maxlength='127' "
+    "placeholder='https://api.openai.com/v1/chat/completions'>"
+    "<label>Modelo da IA</label>"
+    "<input name='model' maxlength='63' placeholder='gpt-4o'>"
     "<label>Personalidade da IA</label>"
     "<textarea name='personality' maxlength='255'>"
     "Voce e um assistente inteligente e conciso.</textarea>"
@@ -248,11 +253,15 @@ static esp_err_t post_save_handler(httpd_req_t *req) {
   char pass[64] = {0};
   char token[220] = {0};
   char personality[256] = {0};
+  char base_url[128] = {0};
+  char model[64] = {0};
 
   form_get_field(body, "ssid", ssid, sizeof(ssid));
   form_get_field(body, "pass", pass, sizeof(pass));
   form_get_field(body, "token", token, sizeof(token));
   form_get_field(body, "personality", personality, sizeof(personality));
+  form_get_field(body, "base_url", base_url, sizeof(base_url));
+  form_get_field(body, "model", model, sizeof(model));
   free(body);
 
   if (strlen(ssid) == 0 || strlen(token) == 0) {
@@ -261,10 +270,12 @@ static esp_err_t post_save_handler(httpd_req_t *req) {
     return ESP_FAIL;
   }
 
-  ESP_LOGI(TAG, "POST /save => ssid='%s' token='%.8s...'", ssid, token);
+  ESP_LOGI(TAG, "POST /save => ssid='%s' token='%.8s...' url='%s' model='%s'",
+           ssid, token, base_url, model);
 
   esp_err_t save_err = config_manager_update_and_save(
-      ssid, pass, token, strlen(personality) > 0 ? personality : NULL);
+      ssid, pass, token, strlen(personality) > 0 ? personality : NULL,
+      strlen(base_url) > 0 ? base_url : NULL, strlen(model) > 0 ? model : NULL);
 
   if (save_err != ESP_OK) {
     ESP_LOGE(TAG, "Failed to save config: %s", esp_err_to_name(save_err));

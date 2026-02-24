@@ -29,6 +29,9 @@ static app_config_t s_config = {
     /* ai_personality inicializada em config_manager_load() se não houver JSON
      */
     .ai_personality = "",
+    .ai_base_url = "https://api.openai.com/v1/chat/completions",
+    .ai_model = "gpt-4o", /* O modelo padrão de visão. Áudio usa preview
+                             estático se não houver endpoint de áudio */
     .volume = 70,
     .brightness = 85,
     .loaded = false,
@@ -138,6 +141,18 @@ esp_err_t config_manager_load(void) {
       strlcpy(s_config.ai_personality, s_default_personality,
               sizeof(s_config.ai_personality));
     }
+
+    const cJSON *base_url = cJSON_GetObjectItemCaseSensitive(ai, "base_url");
+    if (cJSON_IsString(base_url) && base_url->valuestring &&
+        base_url->valuestring[0]) {
+      strlcpy(s_config.ai_base_url, base_url->valuestring,
+              sizeof(s_config.ai_base_url));
+    }
+
+    const cJSON *model = cJSON_GetObjectItemCaseSensitive(ai, "model");
+    if (cJSON_IsString(model) && model->valuestring && model->valuestring[0]) {
+      strlcpy(s_config.ai_model, model->valuestring, sizeof(s_config.ai_model));
+    }
   }
 
   /* hardware */
@@ -187,6 +202,8 @@ esp_err_t config_manager_save(void) {
   cJSON *ai = cJSON_CreateObject();
   cJSON_AddStringToObject(ai, "token", s_config.ai_token);
   cJSON_AddStringToObject(ai, "personality", s_config.ai_personality);
+  cJSON_AddStringToObject(ai, "base_url", s_config.ai_base_url);
+  cJSON_AddStringToObject(ai, "model", s_config.ai_model);
   cJSON_AddItemToObject(root, "ai", ai);
 
   /* hardware */
@@ -231,7 +248,9 @@ esp_err_t config_manager_save(void) {
  * ----------------------------------------------------------------------- */
 esp_err_t config_manager_update_and_save(const char *ssid, const char *pass,
                                          const char *ai_token,
-                                         const char *ai_personality) {
+                                         const char *ai_personality,
+                                         const char *ai_base_url,
+                                         const char *ai_model) {
   if (ssid)
     strlcpy(s_config.wifi_ssid, ssid, sizeof(s_config.wifi_ssid));
   if (pass)
@@ -241,6 +260,10 @@ esp_err_t config_manager_update_and_save(const char *ssid, const char *pass,
   if (ai_personality)
     strlcpy(s_config.ai_personality, ai_personality,
             sizeof(s_config.ai_personality));
+  if (ai_base_url)
+    strlcpy(s_config.ai_base_url, ai_base_url, sizeof(s_config.ai_base_url));
+  if (ai_model)
+    strlcpy(s_config.ai_model, ai_model, sizeof(s_config.ai_model));
   s_config.loaded = true;
   return config_manager_save();
 }

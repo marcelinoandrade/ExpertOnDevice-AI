@@ -89,9 +89,7 @@ Mais do que um simples "assistente de IA embarcado", esta solução é uma **pla
 
 ## 🔓 Arquitetura Aberta — LLM Agnóstico
 
-> **Estado atual:** o projeto **já é agnóstico de LLM** — basta alterar a URL e o modelo no `secret.h` e recompilar para usar Claude, Groq, Llama ou qualquer provedor com API REST compatível.
-> 
-> **Roadmap:** eliminar a necessidade de recompilação. O `token` e a `personality` já mudam via `settings.json` sem recompilar. O suporte a `base_url` e `model` dinâmicos via JSON **está em desenvolvimento**.
+> **Estado atual:** O projeto na versão **ESP32-P4** agora é **100% agnóstico de LLM de forma Dinâmica** — você pode transitar livremente por diversos provedores de Inteligência Artificial (OpenAI, Anthropic Claude, Groq, Ollama local) instantaneamente modificando as opções via Web, sem a necessidade de plugar cabos ou recompilar o firmware!
 
 A arquitetura do firmware foi desenhada para suportar qualquer provedor via API REST. Quando implementado, bastará editar o `settings.json`:
 
@@ -114,9 +112,9 @@ A arquitetura do firmware foi desenhada para suportar qualquer provedor via API 
 | **OpenRouter** | `openrouter.ai/api/v1` | Todos os acima | Uma chave para todos |
 | **Local (Ollama)** | `ip-local:11434/v1` | Llama 3, Mistral | Privacidade total offline |
 
-> 💡 **Para empresas:** quando implementado, será possível apontar para um servidor LLM interno sem que dados de áudio ou imagem saiam da rede corporativa.
+> 💡 **Para empresas:** Com o recurso implementado, é perfeitamente viável apontar o `base_url` do ESP32-P4 para um servidor de LLM interno da rede local (ex: Ollama) via Portal Web, mantendo áudios e imagens em soberania offline sem vazar dados para a internet pública!
 
-> ⚠️ **Quer contribuir?** A implementação do `base_url` dinâmico no cliente HTTP é uma das contribuições mais bem-vindas — veja a seção [Contribuindo](#-contribuindo).
+> 🧠 **Perfis e Personalidades Múltiplas:** Toda instrução comportamental preenchida no Web Captive Portal passará a ser somada ao perfil especialista físico rotacionado na placa, criando agentes muito mais singulares e únicos. Esses dados ficarão salvos no cartão MicroSD de maneira persistente via `settings.json`.
 
 ---
 
@@ -296,7 +294,7 @@ idf.py -p /dev/ttyUSB0 build flash monitor  # Linux
 ### 3. ⚙️ Configuração Zero-Touch (Captive Portal)
 > Sem precisar recompilar! Perfeito para implantação em campo.
 
-1. **Segure ENCODER + BTN1 por 10 segundos**
+1. **Segure BTN2 + BTN3 por 10 segundos**
 2. Conecte ao Wi-Fi `Assistant-Config-P4` (sem senha)
 3. Abra o browser em `http://192.168.4.1`
 4. Preencha SSID, Senha e Token — o dispositivo reinicia automaticamente
@@ -394,11 +392,9 @@ Usuário → [Voz + Foto opcional]
 
 - [x] Push-to-talk com encoder rotativo
 - [x] Modo **Voz** (somente áudio) e **Foto+Voz** (câmera + áudio simultâneos)
-- [x] **Token e personalidade** configuráveis via `settings.json` (sem recompilar)
-- [ ] **URL de endpoint customizável** por LLM (Claude, Groq, Ollama) — *em desenvolvimento*
-- [x] 3 perfis de especialista (Geral, Agrônomo, Engenheiro)
-- [x] **Captive Portal**: configura Wi-Fi e LLM via browser (sem recompilar)
-- [x] `config_manager`: lê `settings.json` do SD na inicialização
+- [x] **URL Base e Modelo Dinâmico**: Mude de API sem plugar o cabo ou recompilar o firmware (ESP32-P4-EYE).
+- [x] **Modo Especialista Combinado**: Integre personalidades e identidades customizadas do Web App junto dos 3 perfis físicos nativos (Geral, Agrônomo, Engenheiro).
+- [x] **Captive Portal Zero-Touch**: Configura rede Wi-Fi, Token da LLM, URL e Modelo da IA via browser em 30 segundos!
 - [x] SD Card: fotos (`IMG_*.jpg`), áudios (`REC_*.wav`), logs (`CHAT_*.txt`)
 - [x] SNTP: timestamps precisos em todos os arquivos
 - [x] Long File Names (FATFS LFN habilitado)
@@ -469,8 +465,8 @@ git push origin feature/wake-word-local
 ```
 
 Áreas onde contribuições são especialmente bem-vindas:
-- 🤖 **Testar com outras LLMs** (Claude, Groq, Ollama) e reportar compatibilidade
-- 🔗 **Implementar `base_url` dinâmico** no cliente HTTP (elimina recompilação para trocar de LLM)
+- 🤖 **Homologar provedores e Testar compatibilidade de modelos Multimodais** (Anthropic Claude, Groq Whisper) e corrigir parsing de response na linguagem C se necessário
+- 🔗 **Levar a funcionalidade URL e Modelos Dinâmicos ao ESP32-S3** (recurso disponível atualmente para ESP32-P4)
 - 📡 **OTA (Over-The-Air)**: atualização de firmware pelo ar via Wi-Fi — sem precisar de cabo USB em campo
 - 🔊 TTS (síntese de voz local)
 - 📱 App companion (BLE/Wi-Fi)
