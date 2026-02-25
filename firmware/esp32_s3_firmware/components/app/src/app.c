@@ -926,7 +926,10 @@ static void app_task(void *arg) {
       /* DEBUG: Print raw button state every 2 seconds */
       ESP_LOGI(TAG, "RAW BUTTON LEVEL (GPIO 18): %d | is_pressed(): %d",
                gpio_get_level(18), bsp_button_is_pressed());
-      gui_set_status_icons(bsp_wifi_is_ready(), -1 /* no battery ADC */);
+
+      int batt_percent = -1;
+      bsp_battery_get_percent(&batt_percent);
+      gui_set_status_icons(bsp_wifi_is_ready(), batt_percent);
     }
 
     // Push-to-Talk: Start on Press (Falling edge)
@@ -1000,6 +1003,8 @@ esp_err_t app_init(void) {
   if (s_app_queue) {
     return ESP_OK;
   }
+
+  bsp_battery_init();
 
   s_app_queue = xQueueCreate(APP_QUEUE_LENGTH, sizeof(app_event_t));
   if (!s_app_queue) {

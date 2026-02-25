@@ -52,3 +52,16 @@ esp_err_t bsp_sdcard_mount(void);
 
 /** @brief Unmount the SD card and free the SPI slot. */
 esp_err_t bsp_sdcard_unmount(void);
+
+/**
+ * @brief Initialize the ADC for the Battery (ADC_UNIT_1, ADC_CHANNEL_4).
+ */
+esp_err_t bsp_battery_init(void);
+
+/**
+ * @brief Reads the battery voltage via ADC and converts to an estimated
+ * percentage 0-100.
+ * @param[out] out_percent Points to where the resulting percentage will be
+ * stored.
+ */
+esp_err_t bsp_battery_get_percent(int *out_percent);
