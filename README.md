@@ -146,7 +146,7 @@ A arquitetura do firmware foi desenhada para suportar qualquer provedor via API 
 
 ### 🟢 ESP32-S3 — A versão ACESSÍVEL e WEARÁVEL
 
-| ![S3 - Vista 1](imagens/s3_00.png) | ![S3 - Vista 2](imagens/s3_01.png) | ![S3 - Vista 3](imagens/s3_0.png) |
+| ![S3 - Vista 1](imagens/s3_00.png) | ![S3 - Vista 2](imagens/s3_01.png) | ![S3 - Vista 3](imagens/s3_03.png) |
 |---|---|---|
 
 </div>
