@@ -146,7 +146,7 @@ A arquitetura do firmware foi desenhada para suportar qualquer provedor via API 
 
 ### 🟢 ESP32-S3 — A versão ACESSÍVEL e WEARÁVEL
 
-| ![S3 - Vista 1](imagens/s3_00.png) | ![S3 - Vista 2](imagens/s3_01.png) | ![S3 - Vista 3](imagens/s3_02.png) |
+| ![S3 - Vista 1](imagens/s3_00.png) | ![S3 - Vista 2](imagens/s3_01.png) | ![S3 - Vista 3](imagens/s3_0.png) |
 |---|---|---|
 
 </div>
@@ -159,6 +159,8 @@ A arquitetura do firmware foi desenhada para suportar qualquer provedor via API 
 - ⚡ **Arquitetura 8.8/10 Robusta:** Gestão assíncrona orientada a eventos (`FreeRTOS Queues`), alocação em `PSRAM` impedindo vazamento de RAM e *Opportunistic Saving*.
 - 👕 **Tamanho ideal**: Pode servir de smartwatch ou crachá corporativo inteligente.
 - 📡 Wi-Fi nativo — sem chip auxiliar e com Portal Web de Configuração integrado.
+
+---
 
 ### Comparativo Físico das Versões
 
@@ -174,14 +176,14 @@ A arquitetura do firmware foi desenhada para suportar qualquer provedor via API 
 
 ---
 
-## � Casos de Uso Reais (e onde está o dinheiro)
+##   Casos de Uso Reais (e onde está o dinheiro)
 
 ```
 🏭 Indústria 4.0
    → Operador com mãos livres consulta manuais por voz e foto de componente
    → ROI: elimina paradas de ~2h/dia para buscar documentação técnica
 
-� Saúde
+  Saúde
    → Crachá inteligente transcreve consultas diretamente no prontuário
    → ROI: reduz ~40% do tempo de preenchimento administrativo
 
@@ -197,7 +199,7 @@ A arquitetura do firmware foi desenhada para suportar qualquer provedor via API 
    → Análise de cena em tempo real sem enviar imagens para nuvem pública
    → ROI: conformidade com LGPD/GDPR sem abrir mão de IA avançada
 
-� Automotivo / Logística
+  Automotivo / Logística
    → Assistente de bordo por voz sem tela, sem cabo, consumo mínimo
    → ROI: mãos livres para motoristas com checklist automatizado
 
