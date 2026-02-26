@@ -158,12 +158,12 @@ A arquitetura do firmware foi desenhada para suportar qualquer provedor via API 
 </div>
 **Hardware:** Kits ESP32-S3 com Microfone e Display (ex: ESP32-S3-Touch-LCD) a partir de **~U$20**
 
-- 🔋 Bateria Otimizada: Modo de baixo consumo (**Deep Sleep**) integrado, dura dias. Reativação no clique via `Wake-on-Button`.
-- 🎙️ Interação Fluida: **Push-to-Talk** (Borda de hardware perfeita para Início e Fim da gravação). O visor congela a reposta da IA até que você inicie uma nova gravação.
-- 🖥️ **Apoio Local (Offline):** Grava os áudios e logs de chats em **SD Card**, com interface LVGL rodando em barramento SPI.
-- ⚡ **Arquitetura 8.8/10 Robusta:** Gestão assíncrona orientada a eventos (`FreeRTOS Queues`), alocação em `PSRAM` impedindo vazamento de RAM e *Opportunistic Saving*.
-- 👕 **Tamanho ideal**: Pode servir de smartwatch ou crachá corporativo inteligente.
-- 📡 Wi-Fi nativo — sem chip auxiliar e com Portal Web de Configuração integrado.
+- 🔋 **Bateria Otimizada**: Modo de baixo consumo interativo (**Deep Sleep**) integrado, dura dias. Reativação no clique via `Wake-on-Button`.
+- 🎙️ **Interação Fluida**: **Push-to-Talk** (Borda de hardware perfeita para Início e Fim da gravação). O visor preserva a resposta da IA até que você inicie uma nova gravação.
+- 🖥️ **Apoio Local (Offline)**: Grava áudios e logs de chats no **SD Card**, garantindo auditoria e fallback, com interface LVGL rodando em barramento SPI.
+- ⚡ **Arquitetura Robusta e Orientada a Eventos**: Gestão assíncrona com `FreeRTOS Queues`, uso intensivo dos 8MB de `PSRAM` para áudio (suportando até 20s de captura) impedindo *Out of Memory (OOM)*, e persistência inteligente (*Opportunistic Saving*).
+- 👕 **Tamanho Ideal**: Compacto, podendo servir de um assistente de bolso, smartwatch ou crachá corporativo inteligente.
+- 📡 **Conectividade Total**: Wi-Fi nativo operando sem chip auxiliar e Servidor Web de Configuração integrado (Captive Portal).
 
 ---
 
@@ -171,13 +171,13 @@ A arquitetura do firmware foi desenhada para suportar qualquer provedor via API 
 
 | Feature | ESP32-S3 | ESP32-P4-EYE |
 |---|---|---|
-| **Câmera** | ❌ | ✅ 2MP |
-| **Display LVGL** | ✅ ST7789/SPI | ✅ MIPI-DSI |
-| **SD Card** | ✅ SPI | ✅ SDIO |
-| **Captive Portal**| ✅ | ✅ |
-| **SNTP / RTC** | ✅ | ✅ |
-| **Rede Wi-Fi** | STA Nativo | Via C6 (ESP-Hosted)|
-| **Deep Sleep** | ✅ Otimizado (< µA) | ❌ |
+| **Câmera Integrada** | ❌ | ✅ 2 Megapixels |
+| **Interface LVGL** | ✅ ST7789 / SPI | ✅ Alta Performance / MIPI-DSI |
+| **Armazenamento SD** | ✅ Otimizado / SPI | ✅ Alta Velocidade / SDIO 4-Bit |
+| **Painel Web Portátil** | ✅ | ✅ |
+| **Date Time (SNTP)** | ✅ | ✅ |
+| **Arquitetura Wi-Fi** | STA Nativo Interno | Via C6 Auxiliar (ESP-Hosted)|
+| **Bateria Otimizada** | ✅ Deep Sleep Nativo (< µA) | ❌ |
 
 ---
 
@@ -411,23 +411,22 @@ Usuário → [Voz + Foto opcional]
 
 ## 📋 Funcionalidades
 
-- [x] **Push-to-talk Robusto**: Inícia na "borda de descida" e finaliza na "subida". Sem flags fáceis de quebrar. Última resposta da IA persiste na tela para o usuário consultar.
-- [x] Modo **Voz** (somente áudio) e **Foto+Voz** (câmera + áudio simultâneos)
-- [x] **URL Base e Modelo Dinâmico**: Mude de API sem plugar o cabo ou recompilar o firmware (ESP32-P4-EYE).
-- [x] **Modo Especialista Combinado**: Integre personalidades e identidades customizadas do Web App junto dos 3 perfis físicos nativos (Geral, Agrônomo, Engenheiro).
-- [x] **Captive Portal Zero-Touch**: Configura rede Wi-Fi, Token da LLM, URL e Modelo da IA via browser em 30 segundos!
-- [x] **Arquitetura Event-Driven & PSRAM**: Uso otimizado de Tasks (`FreeRTOS`), Mutex no barramento SPI p/ não causar lentidão na GUI/SD e salvamento oportunista offline (`Opportunistic Data Saving`).
-- [x] **Histórico de Conversa (Multi-turn)**: Memória RAM PSRAM avançada retém as últimas 10 iterações de forma dinâmica na "janela de contexto". O dispositivo lembra o que você falou momentos antes.
-- [x] SD Card: fotos (`IMG_*.jpg`), áudios (`REC_*.wav`), logs (`CHAT_*.txt`)
-- [x] SNTP: timestamps precisos em todos os arquivos
-- [x] Long File Names (FATFS LFN habilitado)
-- [x] Interface LVGL fluída e Gerenciamento Inteligente de Display/Bateria via **Deep Sleep** (Ext1).
-- [x] Servidor DNS para Captive Portal automático (Android/iOS/Windows)
-- [ ] TTS (Text-to-Speech) — *planejado*
-- [ ] Wake word local (sem botão) — *planejado*
-- [ ] App BLE companion — *planejado*
-- [ ] Histórico de conversa (multi-turn) — *planejado*
-- [ ] **OTA (Over-The-Air)** — atualização de firmware pelo ar via Wi-Fi, sem cabo USB — *planejado*
+- [x] **Push-to-Talk Robusto**: Inicia na borda de descida de hardware e finaliza na subida de forma determinística. A última resposta da IA persiste ativamente no display para o usuário.
+- [x] Modo **Voz** (somente áudio) e **Foto+Voz** (câmera + áudio simultâneos).
+- [x] **URL Base e Modelo Dinâmico**: Mude de provedor LLM via Captive Portal sem plugar cabos ou recompilar o firmware.
+- [x] **Modo Especialista Combinado**: Integre personalidades customizadas via SD Card aos perfis selecionáveis no hardware.
+- [x] **Captive Portal Zero-Touch**: Configuração de Wi-Fi, Token da IA, Modelo e System Prompt via Web Browser rapidamente.
+- [x] **Arquitetura Event-Driven & PSRAM Avançada**: Uso intensivo de Tasks isoladas (`FreeRTOS`), Mutex no barramento SPI para proteger o log local de lentidão na GUI/SD e sistema de salvamento offline seguro (`Opportunistic Saving`).
+- [x] **Histórico de Conversa (Multi-turn)**: A PSRAM retém as opções dinâmicas na "janela de contexto". O dispositivo lembra o que você reportou momentos antes.
+- [x] SD Card robusto: Salva fotos (`IMG_*.jpg`), áudios em PCM convertidos para WAV perfeitamente (`REC_*.wav`), e os extratos das interações (`CHAT_*.txt`).
+- [x] SNTP com relógio interno (Timestamp exato para todos os registros no SD).
+- [x] Long File Names em FATFS.
+- [x] Interface LVGL responsiva e Gerenciamento Inteligente de Bateria via **Deep Sleep** otimizado (Microamp standby timer e Wakeup no botão).
+- [x] Servidor DNS integrado em AP-Mode para o Web Portal Pop-up imediato.
+- [ ] TTS (Text-to-Speech) integrado offline localmente — *planejado*
+- [ ] Wake word local nativo (substituindo o uso contínuo de botão físico) — *planejado*
+- [ ] Opcional em Plataformas Companion Apps e BLE — *planejado*
+- [ ] **OTA (Over-The-Air)** — Atualizando o sistema embarcado e modelos customizados sem cabo, via Nuvem — *planejado*
 
 ---
 
