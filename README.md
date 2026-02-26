@@ -144,16 +144,10 @@ A arquitetura do firmware foi desenhada para suportar qualquer provedor via API 
 
 <div align="center">
 
-### 🟢 ESP32-S3 — A versão ACESSÍVEL e WEARÁVEL
+### 🟢 Demonstração em Vídeo: ESP32-S3 AI Assistant
+[![Demonstração do S3](https://img.youtube.com/vi/WFsw05Ka1Cc/0.jpg)](https://www.youtube.com/watch?v=WFsw05Ka1Cc)
 
-<video src="https://youtu.be/WFsw05Ka1Cc" controls width="720">
-  <a href="https://youtu.be/WFsw05Ka1Cc">▶ Ver demonstração do S3 em vídeo</a>
-</video>
-
-
-
-| ![S3 - Vista 1](imagens/s3_00.png) | ![S3 - Vista 2](imagens/s3_01.png) | ![S3 - Vista 3](imagens/s3_03.png) |
-|---|---|---|
+> *Clique na imagem acima para ver o assistente a funcionar em tempo real.*
 
 </div>
 
