@@ -16,6 +16,9 @@ esp_err_t gui_set_state(const char *state_text);
 /** @brief Update the top-right icons (Wi-Fi and Battery). */
 esp_err_t gui_set_status_icons(bool wifi_ok, int batt_percent);
 
+/** @brief Show dynamic Wi-Fi connecting status. */
+esp_err_t gui_set_wifi_status_anim(bool connecting);
+
 /** @brief Set the transcript text (usually displayed during/after recording).
  */
 esp_err_t gui_set_transcript(const char *text);

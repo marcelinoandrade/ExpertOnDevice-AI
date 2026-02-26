@@ -402,6 +402,16 @@ static void bsp_wifi_event_handler(void *arg, esp_event_base_t event_base,
     ESP_LOGI(TAG, "Wi-Fi connected, got IP: " IPSTR,
              IP2STR(&event->ip_info.ip));
     xEventGroupSetBits(s_wifi_event_group, BSP_WIFI_CONNECTED_BIT);
+
+    // Sync time now that we have internet
+    static bool s_sntp_initialized = false;
+    if (!s_sntp_initialized) {
+      s_sntp_initialized = true;
+      ESP_LOGI(TAG, "Initializing SNTP in background...");
+      esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+      esp_sntp_setservername(0, "pool.ntp.org");
+      esp_sntp_init();
+    }
   }
 }
 
@@ -447,38 +457,15 @@ static esp_err_t bsp_wifi_init(void) {
                       "esp_wifi_set_config");
   ESP_RETURN_ON_ERROR(esp_wifi_start(), TAG, "esp_wifi_start");
 
-  EventBits_t bits = xEventGroupWaitBits(
-      s_wifi_event_group, BSP_WIFI_CONNECTED_BIT | BSP_WIFI_FAIL_BIT, pdFALSE,
-      pdFALSE, pdMS_TO_TICKS(BSP_WIFI_WAIT_TIMEOUT_MS));
-
-  if (bits & BSP_WIFI_CONNECTED_BIT) {
-    ESP_LOGI(TAG, "Wi-Fi ready");
-    return ESP_OK;
-  }
-  if (bits & BSP_WIFI_FAIL_BIT) {
-    ESP_LOGE(TAG, "Wi-Fi failed after retries");
-    return ESP_FAIL;
-  }
-
-  ESP_LOGE(TAG, "Wi-Fi connection timeout");
-  return ESP_ERR_TIMEOUT;
+  // Do NOT block here waiting for the connection.
+  // Return OK immediately so the GUI and main loop can start.
+  ESP_LOGI(TAG, "Wi-Fi connection started in background");
+  return ESP_OK;
 }
 
 static void bsp_sntp_sync(void) {
-  ESP_LOGI(TAG, "Initializing SNTP and waiting for sync...");
-  esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
-  esp_sntp_setservername(0, "pool.ntp.org");
-  esp_sntp_init();
-
-  // Wait for time to be set
-  int retry = 0;
-  const int retry_count = 10;
-  while (sntp_get_sync_status() == SNTP_SYNC_STATUS_RESET &&
-         ++retry < retry_count) {
-    ESP_LOGI(TAG, "Waiting for system time to be set... (%d/%d)", retry,
-             retry_count);
-    vTaskDelay(pdMS_TO_TICKS(2000));
-  }
+  // Now handled asynchronously inside bsp_wifi_event_handler to prevent
+  // blocking
 }
 
 esp_err_t bsp_init(void) {
@@ -493,9 +480,8 @@ esp_err_t bsp_init(void) {
   ESP_RETURN_ON_ERROR(bsp_audio_init(), TAG, "audio i2s init failed");
   ESP_RETURN_ON_ERROR(bsp_wifi_init(), TAG, "wifi init failed");
 
-  if (bsp_wifi_is_ready()) {
-    bsp_sntp_sync();
-  }
+  // Wi-Fi is initialized but connection happens in background.
+  // SNTP is triggered on IP_EVENT_STA_GOT_IP.
 
   return ESP_OK;
 }

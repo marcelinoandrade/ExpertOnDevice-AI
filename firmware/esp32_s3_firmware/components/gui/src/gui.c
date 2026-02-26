@@ -302,8 +302,8 @@ esp_err_t gui_set_status_icons(bool wifi_ok, int batt_percent) {
   if (!bsp_lvgl_lock(200))
     return ESP_ERR_TIMEOUT;
 
-  const char *wifi_sym = wifi_ok ? LV_SYMBOL_WIFI : LV_SYMBOL_CLOSE;
-  char txt[32];
+  const char *wifi_sym = wifi_ok ? "W" : "NW";
+  static char txt[32]; // Must be static for LVGL label
   if (batt_percent < 0) {
     snprintf(txt, sizeof(txt), "%s", wifi_sym);
   } else {
@@ -311,11 +311,6 @@ esp_err_t gui_set_status_icons(bool wifi_ok, int batt_percent) {
   }
   lv_label_set_text(s_label_icons, txt);
   bsp_lvgl_unlock();
-  return ESP_OK;
-}
-
-esp_err_t gui_set_transcript(const char *text) {
-  (void)text;
   return ESP_OK;
 }
 
@@ -347,6 +342,42 @@ esp_err_t gui_set_response_compact(bool compact) {
   return ESP_OK;
 }
 
+esp_err_t gui_set_transcript(const char *text) {
+  (void)text;
+  return ESP_OK;
+}
+
+esp_err_t gui_set_wifi_status_anim(bool connecting) {
+  if (!s_label_icons)
+    return ESP_ERR_INVALID_STATE;
+  if (!bsp_lvgl_lock(200))
+    return ESP_ERR_TIMEOUT;
+
+  if (connecting) {
+    // Alternating between "W" and blanks for blinking effect
+    static uint8_t spinner_state = 0;
+
+    int batt_percent = -1;
+    bsp_battery_get_percent(&batt_percent);
+
+    static char txt[32]; // Must be static for LVGL label to persist
+    const char *wifi_char = (spinner_state == 0) ? "W" : "   ";
+
+    if (batt_percent < 0) {
+      snprintf(txt, sizeof(txt), "%s", wifi_char);
+    } else {
+      snprintf(txt, sizeof(txt), "%s %d%%", wifi_char, batt_percent);
+    }
+
+    lv_label_set_text(s_label_icons, txt);
+    spinner_state = (spinner_state + 1) % 2;
+  }
+
+  bsp_lvgl_unlock();
+  return ESP_OK;
+}
+
+bool gui_is_profile_pressed(void) { return s_profile_btn_held; }
 esp_err_t gui_set_response_panel_visible(bool visible) {
   if (!s_panel_response)
     return ESP_ERR_INVALID_STATE;
@@ -401,4 +432,3 @@ esp_err_t gui_set_recording_progress(uint8_t percent) {
   bsp_lvgl_unlock();
   return ESP_OK;
 }
-bool gui_is_profile_pressed(void) { return s_profile_btn_held; }

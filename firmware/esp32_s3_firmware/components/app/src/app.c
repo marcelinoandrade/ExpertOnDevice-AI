@@ -355,13 +355,40 @@ static esp_err_t app_extract_response_text(const char *json, char *out_text,
     cJSON *first_choice = cJSON_GetArrayItem(choices, 0);
     cJSON *message = cJSON_GetObjectItemCaseSensitive(first_choice, "message");
     cJSON *content = cJSON_GetObjectItemCaseSensitive(message, "content");
+    cJSON *audio = cJSON_GetObjectItemCaseSensitive(message, "audio");
 
+    // Format 1: gpt-4o audio responses put text in message.audio.transcript
+    if (audio) {
+      cJSON *transcript = cJSON_GetObjectItemCaseSensitive(audio, "transcript");
+      if (cJSON_IsString(transcript) && transcript->valuestring) {
+        strlcpy(out_text, transcript->valuestring, out_text_len);
+        cJSON_Delete(root);
+        return ESP_OK;
+      }
+    }
+
+    // Format 2: Standard text in message.content
     if (cJSON_IsString(content) && content->valuestring) {
       strlcpy(out_text, content->valuestring, out_text_len);
+      // Clean up enclosed JSON wrappers if model hallucinated a JSON string
+      // (e.g. `{"text": "..."}`)
+      if (out_text[0] == '{' && strchr(out_text, '}')) {
+        cJSON *inner = cJSON_Parse(out_text);
+        if (inner) {
+          cJSON *inner_text = cJSON_GetObjectItemCaseSensitive(inner, "text");
+          if (!inner_text)
+            inner_text = cJSON_GetObjectItemCaseSensitive(inner, "response");
+          if (cJSON_IsString(inner_text) && inner_text->valuestring) {
+            strlcpy(out_text, inner_text->valuestring, out_text_len);
+          }
+          cJSON_Delete(inner);
+        }
+      }
       cJSON_Delete(root);
       return ESP_OK;
     }
 
+    // Format 3: Array format in content (e.g. Anthropic-like mapped to OpenAI)
     if (cJSON_IsArray(content)) {
       cJSON *part = NULL;
       cJSON_ArrayForEach(part, content) {
@@ -372,6 +399,17 @@ static esp_err_t app_extract_response_text(const char *json, char *out_text,
           return ESP_OK;
         }
       }
+    }
+  } else {
+    // Fallback for non-OpenAI standard endpoints returning flat {"response":
+    // "..."}
+    cJSON *response_field = cJSON_GetObjectItemCaseSensitive(root, "response");
+    if (!response_field)
+      response_field = cJSON_GetObjectItemCaseSensitive(root, "text");
+    if (cJSON_IsString(response_field) && response_field->valuestring) {
+      strlcpy(out_text, response_field->valuestring, out_text_len);
+      cJSON_Delete(root);
+      return ESP_OK;
     }
   }
 
@@ -738,7 +776,6 @@ static esp_err_t app_do_interaction(void) {
   app_set_state(APP_STATE_LISTENING);
   size_t captured_bytes = 0;
   const TickType_t capture_start = xTaskGetTickCount();
-  bool local_prev_btn = bsp_button_is_pressed();
   uint32_t local_last_edge_ms = pdTICKS_TO_MS(xTaskGetTickCount());
 
   while ((xTaskGetTickCount() - capture_start) <
@@ -814,7 +851,7 @@ static esp_err_t app_do_interaction(void) {
     return ESP_ERR_NO_MEM;
   }
 
-  char ai_response[APP_RESPONSE_TEXT_MAX];
+  char ai_response[APP_RESPONSE_TEXT_MAX] = {0};
   esp_err_t ai_err = app_call_ai_with_audio(wav_data, wav_len, ai_response,
                                             sizeof(ai_response));
   free(wav_data);
@@ -868,7 +905,11 @@ static void app_task(void *arg) {
     if (xQueueReceive(s_app_queue, &evt, pdMS_TO_TICKS(APP_BUTTON_POLL_MS)) ==
         pdTRUE) {
       if (evt.type == APP_EVT_BOOT) {
-        app_set_state(APP_STATE_IDLE);
+        // Only transition to IDLE if we are actually still in BOOTING.
+        // Don't override SHOWING_RESPONSE if a late boot event arrives
+        if (s_state == APP_STATE_BOOTING) {
+          app_set_state(APP_STATE_IDLE);
+        }
         s_prev_button_state = button_pressed; // Ignore if held at boot
         continue;
       }
@@ -929,7 +970,18 @@ static void app_task(void *arg) {
 
       int batt_percent = -1;
       bsp_battery_get_percent(&batt_percent);
-      gui_set_status_icons(bsp_wifi_is_ready(), batt_percent);
+      bool wifi_ready = bsp_wifi_is_ready();
+      if (!wifi_ready) {
+        // While not ready, show the animated connecting text
+        gui_set_wifi_status_anim(true);
+      } else {
+        gui_set_status_icons(wifi_ready, batt_percent);
+      }
+    } else if (!bsp_wifi_is_ready() &&
+               (xTaskGetTickCount() % pdMS_TO_TICKS(500) < pdMS_TO_TICKS(50))) {
+      // Update the spinner animation faster than the 2s loop, approximately
+      // every 500ms
+      gui_set_wifi_status_anim(true);
     }
 
     // Push-to-Talk: Start on Press (Falling edge)
