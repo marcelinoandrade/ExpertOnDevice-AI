@@ -55,11 +55,6 @@ static void safe_copy(char *dst, size_t dst_max, const cJSON *item) {
   }
 }
 
-static bool dir_exists(const char *path) {
-  struct stat st = {0};
-  return (stat(path, &st) == 0 && S_ISDIR(st.st_mode));
-}
-
 /* -----------------------------------------------------------------------
  * config_manager_load
  * ----------------------------------------------------------------------- */

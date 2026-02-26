@@ -404,7 +404,8 @@ Usuário → [Voz + Foto opcional]
 | 🔋 DHCP para cliente AP | **~200ms** (IP 192.168.4.2 confirmado) |
 | 🌐 Latência end-to-end (voz→resposta→save) | **~5–8 segundos** |
 
-👉 **[Ver análise completa dos logs de monitor serial →](LOGS_TECNICOS.md)**
+👉 **[Ver análise completa dos logs do ESP32-P4-EYE →](LOGS_TECNICOS.md)**  
+👉 **[Ver análise completa dos logs do ESP32-S3 →](docs/log_tecnico_s3.md)**
 
 ---
 

@@ -463,11 +463,6 @@ static esp_err_t bsp_wifi_init(void) {
   return ESP_OK;
 }
 
-static void bsp_sntp_sync(void) {
-  // Now handled asynchronously inside bsp_wifi_event_handler to prevent
-  // blocking
-}
-
 esp_err_t bsp_init(void) {
   ESP_LOGI(TAG, "Init BSP");
   ESP_RETURN_ON_ERROR(bsp_button_init(), TAG, "button init failed");

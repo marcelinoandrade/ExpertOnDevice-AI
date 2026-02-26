@@ -29,9 +29,9 @@
 #define APP_QUEUE_LENGTH 8
 #define APP_BUTTON_POLL_MS 40
 #define APP_BUTTON_DEBOUNCE_MS 140
-#define APP_AUDIO_BUFFER_LEN (352 * 1024)
+#define APP_AUDIO_BUFFER_LEN (660 * 1024)
 #define APP_CAPTURE_CHUNK_MS 100
-#define APP_MAX_CAPTURE_MS 10000
+#define APP_MAX_CAPTURE_MS 20000
 #define APP_MIN_CAPTURE_BYTES 24000
 #define APP_MODE_SELECT_TIMEOUT_MS 4000
 #define APP_PREVIEW_REFRESH_MS 220
@@ -39,13 +39,15 @@
 #define APP_RESPONSE_SCROLL_STEP_PX 22
 #define APP_AI_MODEL_AUDIO_TEXT "gpt-4o-audio-preview"
 #define APP_HTTP_TIMEOUT_MS 45000
-#define APP_DEEP_SLEEP_TIMEOUT_MS 30000
+#define APP_DEEP_SLEEP_TIMEOUT_MS 45000
+#define APP_DEEP_SLEEP_WARNING_MS 35000
 // AI Modes
 
 typedef enum {
   APP_EVT_BOOT = 0,
   APP_EVT_INTERACTION_REQUESTED,
   APP_EVT_GUI_EVENT,
+  APP_EVT_DEEP_SLEEP_WARNING,
   APP_EVT_DEEP_SLEEP_TRIGGERED,
 } app_event_type_t;
 
@@ -73,9 +75,17 @@ static char s_last_response[APP_RESPONSE_TEXT_MAX] =
     "Pronto.\nSegure para falar.";
 
 static TimerHandle_t s_deep_sleep_timer = NULL;
+static TimerHandle_t s_sleep_warning_timer = NULL;
 
 static void deep_sleep_timer_cb(TimerHandle_t xTimer) {
   app_event_t evt = {.type = APP_EVT_DEEP_SLEEP_TRIGGERED};
+  if (s_app_queue) {
+    xQueueSend(s_app_queue, &evt, 0);
+  }
+}
+
+static void sleep_warning_timer_cb(TimerHandle_t xTimer) {
+  app_event_t evt = {.type = APP_EVT_DEEP_SLEEP_WARNING};
   if (s_app_queue) {
     xQueueSend(s_app_queue, &evt, 0);
   }
@@ -729,8 +739,10 @@ static void app_set_state(app_state_t next_state) {
     if (next_state == APP_STATE_IDLE ||
         next_state == APP_STATE_SHOWING_RESPONSE) {
       xTimerReset(s_deep_sleep_timer, 0);
+      xTimerReset(s_sleep_warning_timer, 0);
     } else {
       xTimerStop(s_deep_sleep_timer, 0);
+      xTimerStop(s_sleep_warning_timer, 0);
     }
   }
 
@@ -915,6 +927,15 @@ static void app_task(void *arg) {
       }
 
       if (evt.type == APP_EVT_GUI_EVENT) {
+        if (s_deep_sleep_timer)
+          xTimerReset(s_deep_sleep_timer, 0);
+        if (s_sleep_warning_timer)
+          xTimerReset(s_sleep_warning_timer, 0);
+        if (s_state == APP_STATE_IDLE)
+          gui_set_state("Pronto");
+        else if (s_state == APP_STATE_SHOWING_RESPONSE)
+          gui_set_state("Resposta");
+
         if (evt.gui_event == GUI_EVENT_PROFILE) {
           s_expert_profile = (app_expert_profile_t)((s_expert_profile + 1) % 3);
           const char *p_name =
@@ -948,13 +969,19 @@ static void app_task(void *arg) {
         }
       }
 
+      if (evt.type == APP_EVT_DEEP_SLEEP_WARNING) {
+        if (s_state == APP_STATE_IDLE ||
+            s_state == APP_STATE_SHOWING_RESPONSE) {
+          ESP_LOGI(TAG, "Deep sleep warning: 10s remaining");
+          gui_set_state("Suspensao em 10s");
+        }
+      }
+
       if (evt.type == APP_EVT_DEEP_SLEEP_TRIGGERED) {
         if (s_state == APP_STATE_IDLE ||
             s_state == APP_STATE_SHOWING_RESPONSE) {
           ESP_LOGI(TAG, "Inactivity timeout reached, preparing deep sleep...");
           gui_set_state("Entrando na Suspensao...");
-          gui_set_response("Modo de baixo consumo.\nPressione o botao lateral "
-                           "para ligar novamente.");
           vTaskDelay(pdMS_TO_TICKS(
               1500)); // Give time for the UI to render the goodbye message
           bsp_enter_deep_sleep();
@@ -964,9 +991,6 @@ static void app_task(void *arg) {
 
     if (xTaskGetTickCount() - last_status_update > pdMS_TO_TICKS(2000)) {
       last_status_update = xTaskGetTickCount();
-      /* DEBUG: Print raw button state every 2 seconds */
-      ESP_LOGI(TAG, "RAW BUTTON LEVEL (GPIO 18): %d | is_pressed(): %d",
-               gpio_get_level(18), bsp_button_is_pressed());
 
       int batt_percent = -1;
       bsp_battery_get_percent(&batt_percent);
@@ -1070,6 +1094,15 @@ esp_err_t app_init(void) {
     xTimerStart(s_deep_sleep_timer, 0);
   } else {
     ESP_LOGE(TAG, "Failed to create deep sleep timer");
+  }
+
+  s_sleep_warning_timer =
+      xTimerCreate("sleep_warn_timer", pdMS_TO_TICKS(APP_DEEP_SLEEP_WARNING_MS),
+                   pdFALSE, NULL, sleep_warning_timer_cb);
+  if (s_sleep_warning_timer) {
+    xTimerStart(s_sleep_warning_timer, 0);
+  } else {
+    ESP_LOGE(TAG, "Failed to create sleep warning timer");
   }
 
   BaseType_t task_ok =
