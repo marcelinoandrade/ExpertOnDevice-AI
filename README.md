@@ -25,49 +25,15 @@
 
 ---
 
-## 🚀 Plataforma "Expert-on-Device": Diferenciais Estratégicos com Impacto Econômico
+## 🚀 Plataforma "Expert-on-Device": Diferenciais Estratégicos
 
-Mais do que um simples "assistente de IA embarcado", esta solução é uma **plataforma de especialistas multimodais embarcados, configuráveis e soberanos para aplicações profissionais**. Ela eleva o valor percebido, facilita a verticalização por mercado e sustenta múltiplos modelos de monetização (hardware, licenciamento, perfis especialistas, integrações corporativas).
+Mais do que um simples "assistente de IA", esta é uma **plataforma multimodal, configurável e soberana para aplicações profissionais**, desenhada para implantação em escala e múltiplos modelos de monetização.
 
-1. **LLM Agnóstico → Redução de Custos Operacionais**
-   Permite uso de servidor próprio ou troca de modelo conforme preço/desempenho.
-   *Impacto:* elimina dependência de fornecedores e reduz custo por inferência.
-
-2. **Execução *Edge* + *On-Premise* → Privacidade e Conformidade**
-   Processamento local com envio opcional ao servidor próprio.
-   *Impacto:* viável para hospitais, indústria e agro com restrição e dados sensíveis.
-
-3. **Perfis Especialistas Persistentes → Produto Verticalizável**
-   Cada dispositivo pode atuar como especialista embarcado (agro, manutenção, ensino).
-   *Impacto:* cria linhas de produto segmentadas com maior ticket médio (B2B).
-
-4. **Hardware de Baixo Custo → Escala em Larga Quantidade**
-   Base em ESP32 permite implantação massiva com baixo CAPEX (U$20 - U$33 a unidade).
-   *Impacto:* viabiliza vendas em volume para grandes empresas e instituições.
-
-5. **Multimodalidade Completa → Apoio Objetivo à Mão de Obra Especializada**
-   Combina visão + voz + contexto técnico nativamente e em tempo real.
-   *Impacto:* redução drástica de tempo de diagnóstico e suporte técnico.
-
-6. **Configuração Dinâmica → Implantação Rápida em Campo**
-   Perfis e *endpoints* configuráveis via Portal Integrado, sem recompilação de código.
-   *Impacto:* menor custo logístico de suporte e manutenção para os clientes.
-
-7. **Persistência Local de Logs no SD → Auditoria e Pesquisa**
-   Armazenamento automático das interações para análise posterior (áudios, *logs* e fotos).
-   *Impacto:* valor essencial para universidades, P&D e ambientes regulados.
-
-8. **Firmware Modular → Licenciamento Tecnológico**
-   Arquitetura reutilizável em múltiplos dispositivos e parceiros OEM.
-   *Impacto:* abre modelo escalável de receita por licenciamento de *firmware*.
-
-9. **Soberania de Dados → Diferencial Competitivo Institucional**
-   Operação totalmente contida localmente quando em rede corporativa interna.
-   *Impacto:* forte apelo comercial para órgãos públicos, indústria e centros de pesquisa.
-
-10. **Plataforma “Expert-on-Device” → Base para Ecossistema**
-    Permite vender e atualizar perfis especialistas como módulos ou serviços.
-    *Impacto:* fomenta a receita recorrente muito além da venda de hardware.
+- **🤖 LLM Agnóstico & Edge Computing**: Troque de modelo (OpenAI, Claude, Groq) dinamicamente via Portal Web ou rode um LLM *On-Premise*. Garante **privacidade total** e ausência de *vendor lock-in*.
+- **💼 Perfis Especialistas (B2B)**: Implante o comportamento de "agrônomos", "mecânicos" ou "tutores" no mesmo hardware embarcado mudando apenas o contexto. Cria linhas de produto segmentadas de alto valor.
+- **💸 Hardware Custo-Efetivo (< U$33)**: Base em ESP32-S3 e P4-EYE garante baixíssimo CAPEX, viabilizando vendas em larga escala para frotas industriais, escolas e hospitais.
+- **👁️ Multimodalidade + Auditoria Local**: Combina interação por voz e câmera em tempo real, enquanto logs nativos automatizados no Cartão SD cuidam do *compliance* institucional.
+- **🧩 Ecossistema e Licenciamento**: Firmware modular pronto para acordos OEM. Permite receita recorrente vendendo atualizações de "perfis especialistas como serviço" muito além da simples venda do hardware.
 
 ---
 
