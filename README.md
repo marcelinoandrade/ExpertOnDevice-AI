@@ -144,13 +144,18 @@ A arquitetura do firmware foi desenhada para suportar qualquer provedor via API 
 
 <div align="center">
 
-### 🟢 Demonstração em Vídeo: ESP32-S3 AI Assistant
-[![Demonstração do S3](https://img.youtube.com/vi/WFsw05Ka1Cc/0.jpg)](https://www.youtube.com/watch?v=WFsw05Ka1Cc)
+### 🟢 ESP32-S3 — A versão ACESSÍVEL e WEARÁVEL
 
-> *Clique na imagem acima para ver o assistente a funcionar em tempo real.*
+<video src="https://github.com/user-attachments/assets/b09528aa-6595-4580-8ac2-b57701bd5fd9" controls width="100%" style="max-width: 720px;">
+  <a href="https://github.com/user-attachments/assets/b09528aa-6595-4580-8ac2-b57701bd5fd9">▶ Ver demonstração do S3 em vídeo</a>
+</video>
+
+> *Demonstração do assistente operando em modo de baixo consumo e resposta fluida.*
+
+| ![S3 - Vista 1](imagens/s3_00.png) | ![S3 - Vista 2](imagens/s3_01.png) | ![S3 - Vista 3](imagens/s3_03.png) |
+|---|---|---|
 
 </div>
-
 **Hardware:** Kits ESP32-S3 com Microfone e Display (ex: ESP32-S3-Touch-LCD) a partir de **~U$20**
 
 - 🔋 Bateria Otimizada: Modo de baixo consumo (**Deep Sleep**) integrado, dura dias. Reativação no clique via `Wake-on-Button`.
