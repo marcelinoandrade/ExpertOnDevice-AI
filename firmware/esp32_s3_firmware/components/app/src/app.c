@@ -51,12 +51,6 @@ typedef enum {
   APP_EVT_DEEP_SLEEP_TRIGGERED,
 } app_event_type_t;
 
-typedef enum {
-  APP_EXPERT_PROFILE_GENERAL = 0,
-  APP_EXPERT_PROFILE_AGRONOMO,
-  APP_EXPERT_PROFILE_ENGENHEIRO,
-} app_expert_profile_t;
-
 typedef struct {
   app_event_type_t type;
   gui_event_type_t gui_event;
@@ -746,11 +740,18 @@ static void app_set_state(app_state_t next_state) {
     }
   }
 
-  const char *state_str;
+  char state_buf[64];
+  const char *state_str = "";
   switch (next_state) {
-  case APP_STATE_IDLE:
-    state_str = "Pronto";
+  case APP_STATE_IDLE: {
+    const char *p_name =
+        (s_expert_profile == APP_EXPERT_PROFILE_AGRONOMO)     ? "Agronomo"
+        : (s_expert_profile == APP_EXPERT_PROFILE_ENGENHEIRO) ? "Engenheiro"
+                                                              : "Geral";
+    snprintf(state_buf, sizeof(state_buf), "Pronto - %s", p_name);
+    state_str = state_buf;
     break;
+  }
   case APP_STATE_LISTENING:
     state_str = "Gravando...";
     break;
@@ -931,22 +932,14 @@ static void app_task(void *arg) {
           xTimerReset(s_deep_sleep_timer, 0);
         if (s_sleep_warning_timer)
           xTimerReset(s_sleep_warning_timer, 0);
-        if (s_state == APP_STATE_IDLE)
-          gui_set_state("Pronto");
-        else if (s_state == APP_STATE_SHOWING_RESPONSE)
-          gui_set_state("Resposta");
 
         if (evt.gui_event == GUI_EVENT_PROFILE) {
           s_expert_profile = (app_expert_profile_t)((s_expert_profile + 1) % 3);
-          const char *p_name =
-              (s_expert_profile == APP_EXPERT_PROFILE_AGRONOMO) ? "Agronomo"
-              : (s_expert_profile == APP_EXPERT_PROFILE_ENGENHEIRO)
-                  ? "Engenheiro"
-                  : "Geral";
-          char msg[64];
-          snprintf(msg, sizeof(msg), "Perfil: %s", p_name);
-          gui_set_state(msg);
-          ESP_LOGI(TAG, "Profile changed to: %s", p_name);
+          ESP_LOGI(TAG, "Profile changed to: %d", (int)s_expert_profile);
+          app_set_state(s_state); // Refresh state text to reflect new profile
+
+          config_manager_get()->expert_profile = s_expert_profile;
+          config_manager_save();
         } else if (evt.gui_event == GUI_EVENT_SCROLL_UP) {
           gui_scroll_response(-APP_RESPONSE_SCROLL_STEP_PX);
         } else if (evt.gui_event == GUI_EVENT_SCROLL_DOWN) {
@@ -1140,6 +1133,9 @@ esp_err_t app_init(void) {
     ESP_LOGW(TAG, "Config load error: %s - using defaults",
              esp_err_to_name(cfg_err));
   }
+
+  // Restore the active profile from NVS/settings
+  s_expert_profile = config_manager_get()->expert_profile;
 
   gui_set_event_callback(app_gui_event_cb);
   gui_set_footer("Segure para falar  SD: OK");

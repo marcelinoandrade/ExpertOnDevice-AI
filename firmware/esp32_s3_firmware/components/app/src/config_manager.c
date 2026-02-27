@@ -35,6 +35,7 @@ static app_config_t s_config = {
     .ai_base_url = "https://api.openai.com/v1/chat/completions",
     .ai_model = "gpt-4o", /* O modelo padrão de visão. Áudio usa preview
                              estático se não houver endpoint de áudio */
+    .expert_profile = APP_EXPERT_PROFILE_GENERAL,
     .volume = 70,
     .brightness = 85,
     .loaded = false,
@@ -162,6 +163,14 @@ esp_err_t config_manager_load(void) {
     if (cJSON_IsString(model) && model->valuestring && model->valuestring[0]) {
       strlcpy(s_config.ai_model, model->valuestring, sizeof(s_config.ai_model));
     }
+
+    const cJSON *prof = cJSON_GetObjectItemCaseSensitive(ai, "expert_profile");
+    if (cJSON_IsNumber(prof)) {
+      int p_val = prof->valueint;
+      if (p_val >= 0 && p_val <= 2) {
+        s_config.expert_profile = (app_expert_profile_t)p_val;
+      }
+    }
   }
 
   /* hardware */
@@ -215,6 +224,7 @@ esp_err_t config_manager_save(void) {
   cJSON_AddStringToObject(ai, "personality", s_config.ai_personality);
   cJSON_AddStringToObject(ai, "base_url", s_config.ai_base_url);
   cJSON_AddStringToObject(ai, "model", s_config.ai_model);
+  cJSON_AddNumberToObject(ai, "expert_profile", (int)s_config.expert_profile);
   cJSON_AddItemToObject(root, "ai", ai);
 
   /* hardware */

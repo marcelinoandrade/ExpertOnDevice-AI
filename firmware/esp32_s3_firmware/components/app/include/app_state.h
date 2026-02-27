@@ -10,3 +10,9 @@ typedef enum {
   APP_STATE_ERROR,
   APP_STATE_BOOTING,
 } app_state_t;
+
+typedef enum {
+  APP_EXPERT_PROFILE_GENERAL = 0,
+  APP_EXPERT_PROFILE_AGRONOMO,
+  APP_EXPERT_PROFILE_ENGENHEIRO,
+} app_expert_profile_t;

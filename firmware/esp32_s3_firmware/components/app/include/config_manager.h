@@ -1,8 +1,10 @@
 #pragma once
 
+#include "app_state.h"
 #include "esp_err.h"
 #include <stdbool.h>
 #include <stdint.h>
+
 
 #ifdef __cplusplus
 extern "C" {
@@ -33,6 +35,7 @@ typedef struct {
   char ai_personality[CONFIG_AI_PERSONALITY_MAX];
   char ai_base_url[CONFIG_AI_BASE_URL_MAX];
   char ai_model[CONFIG_AI_MODEL_MAX];
+  app_expert_profile_t expert_profile;
 
   /* Hardware */
   uint8_t volume;     /* 0–100 */
