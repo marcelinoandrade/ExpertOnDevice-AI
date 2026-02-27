@@ -153,8 +153,10 @@ esp_err_t bsp_battery_get_percent(int *out_percent) {
     s_smoothed_voltage = (s_smoothed_voltage * 0.90f) + (voltage * 0.10f);
   }
 
-  // Map valid li-ion voltage (3.3V to 4.2V approx) to 0-100%
-  const float V_MAX = 4.15f;
+  // Map valid li-ion voltage to 0-100%
+  // Adjusted V_MAX to 4.00f due to typical ESP32 ADC underreading 
+  // and natural voltage drop disconnected from charger.
+  const float V_MAX = 4.00f;
   const float V_MIN = 3.30f;
 
   int new_percent = 0;
