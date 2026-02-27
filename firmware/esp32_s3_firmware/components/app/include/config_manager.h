@@ -5,7 +5,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -21,6 +20,9 @@ extern "C" {
 #define CONFIG_AI_PERSONALITY_MAX 256
 #define CONFIG_AI_BASE_URL_MAX 128
 #define CONFIG_AI_MODEL_MAX 64
+#define CONFIG_PROFILE_PROMPT_MAX 512
+#define CONFIG_PROFILE_TERMS_MAX 256
+#define CONFIG_PROFILE_NAME_MAX 32
 
 /* -----------------------------------------------------------------------
  * Estrutura principal de configuração
@@ -36,6 +38,19 @@ typedef struct {
   char ai_base_url[CONFIG_AI_BASE_URL_MAX];
   char ai_model[CONFIG_AI_MODEL_MAX];
   app_expert_profile_t expert_profile;
+
+  /* Perfis Especialistas */
+  char profile_general_name[CONFIG_PROFILE_NAME_MAX];
+  char profile_general_prompt[CONFIG_PROFILE_PROMPT_MAX];
+  char profile_general_terms[CONFIG_PROFILE_TERMS_MAX];
+
+  char profile_agronomo_name[CONFIG_PROFILE_NAME_MAX];
+  char profile_agronomo_prompt[CONFIG_PROFILE_PROMPT_MAX];
+  char profile_agronomo_terms[CONFIG_PROFILE_TERMS_MAX];
+
+  char profile_engenheiro_name[CONFIG_PROFILE_NAME_MAX];
+  char profile_engenheiro_prompt[CONFIG_PROFILE_PROMPT_MAX];
+  char profile_engenheiro_terms[CONFIG_PROFILE_TERMS_MAX];
 
   /* Hardware */
   uint8_t volume;     /* 0–100 */
@@ -90,6 +105,14 @@ esp_err_t config_manager_update_and_save(const char *ssid, const char *pass,
                                          const char *ai_personality,
                                          const char *ai_base_url,
                                          const char *ai_model);
+
+/**
+ * @brief Atualiza os perfis especialistas na memória e salva.
+ */
+esp_err_t config_manager_update_profiles(
+    const char *gen_name, const char *gen_prompt, const char *gen_terms,
+    const char *agro_name, const char *agro_prompt, const char *agro_terms,
+    const char *eng_name, const char *eng_prompt, const char *eng_terms);
 
 #ifdef __cplusplus
 }

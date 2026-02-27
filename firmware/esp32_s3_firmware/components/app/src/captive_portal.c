@@ -15,6 +15,7 @@
 #include "lwip/netdb.h"
 #include "lwip/sockets.h"
 
+#include "bsp.h"
 #include "config_manager.h"
 #include "gui.h"
 
@@ -29,47 +30,6 @@ static const char *TAG = "captive_portal";
 /* -----------------------------------------------------------------------
  * Página HTML embarcada
  * ----------------------------------------------------------------------- */
-static const char *s_html_page =
-    "<!DOCTYPE html><html lang='pt-BR'><head>"
-    "<meta charset='UTF-8'>"
-    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-    "<title>Assistant-S3 Config</title>"
-    "<style>"
-    "body{font-family:sans-serif;background:#1a1a2e;color:#eee;display:flex;"
-    "flex-direction:column;align-items:center;padding:20px}"
-    "h1{color:#e94560;margin-bottom:6px}p{color:#aaa;font-size:13px}"
-    "form{background:#16213e;padding:24px;border-radius:12px;width:100%;max-"
-    "width:400px}"
-    "label{display:block;margin:10px 0 4px;font-size:14px;color:#a0c4ff}"
-    "input,textarea{width:100%;box-sizing:border-box;padding:8px;border-radius:"
-    "6px;"
-    "border:1px solid #0f3460;background:#0f3460;color:#eee;font-size:14px}"
-    "textarea{height:70px;resize:vertical}"
-    "button{margin-top:18px;width:100%;padding:12px;background:#e94560;"
-    "color:#fff;border:none;border-radius:8px;font-size:16px;cursor:pointer}"
-    "button:hover{background:#c73652}"
-    ".note{font-size:11px;color:#888;margin-top:6px}"
-    "</style></head><body>"
-    "<h1>&#9881; Assistant S3</h1>"
-    "<p>Configure Wi-Fi e IA, depois salve.</p>"
-    "<form method='POST' action='/save'>"
-    "<label>Wi-Fi SSID</label><input name='ssid' maxlength='63' required>"
-    "<label>Senha Wi-Fi</label><input name='pass' type='password' "
-    "maxlength='63'>"
-    "<label>Token OpenAI (sk-...)</label>"
-    "<input name='token' maxlength='219' required>"
-    "<label>URL Base da IA</label>"
-    "<input name='base_url' maxlength='127' "
-    "placeholder='https://api.openai.com/v1/chat/completions'>"
-    "<label>Modelo da IA</label>"
-    "<input name='model' maxlength='63' placeholder='gpt-4o'>"
-    "<label>Personalidade da IA</label>"
-    "<textarea name='personality' maxlength='255'>"
-    "Voce e um assistente inteligente e conciso.</textarea>"
-    "<button type='submit'>&#128190; Salvar &amp; Reiniciar</button>"
-    "<p class='note'>O dispositivo reiniciar&aacute; ap&oacute;s salvar.</p>"
-    "</form>"
-    "</body></html>";
 
 static const char *s_html_saved =
     "<!DOCTYPE html><html><head><meta charset='UTF-8'>"
@@ -187,7 +147,111 @@ static void dns_server_task(void *pvParameters) {
  * ----------------------------------------------------------------------- */
 static esp_err_t get_root_handler(httpd_req_t *req) {
   httpd_resp_set_type(req, "text/html; charset=UTF-8");
-  httpd_resp_send(req, s_html_page, HTTPD_RESP_USE_STRLEN);
+  const app_config_t *conf = config_manager_get();
+
+  // Part 1: Header and Style
+  httpd_resp_sendstr_chunk(
+      req,
+      "<!DOCTYPE html><html lang='pt-BR'><head>"
+      "<meta charset='UTF-8'>"
+      "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+      "<title>Assistant-S3 Config</title>"
+      "<style>"
+      "body{font-family:sans-serif;background:#1a1a2e;color:#eee;display:flex;"
+      "flex-direction:column;align-items:center;padding:20px}"
+      "h1{color:#e94560;margin-bottom:6px}p{color:#aaa;font-size:13px}"
+      "form{background:#16213e;padding:24px;border-radius:12px;width:100%;max-"
+      "width:400px}"
+      "label{display:block;margin:10px 0 4px;font-size:14px;color:#a0c4ff}"
+      "input,textarea{width:100%;box-sizing:border-box;padding:8px;border-"
+      "radius:"
+      "6px;"
+      "border:1px solid #0f3460;background:#0f3460;color:#eee;font-size:14px}"
+      "textarea{height:70px;resize:vertical}"
+      "button{margin-top:18px;width:100%;padding:12px;background:#e94560;"
+      "color:#fff;border:none;border-radius:8px;font-size:16px;cursor:pointer}"
+      "button:hover{background:#c73652}"
+      ".note{font-size:11px;color:#888;margin-top:6px}"
+      "</style></head><body>"
+      "<h1>&#9881; Assistant S3</h1>"
+      "<p>Configure Wi-Fi e IA, depois salve.</p>"
+      "<form method='POST' action='/save'>");
+
+  // Part 2: Wi-Fi and Core AI
+  char *buf = malloc(1024);
+  if (!buf)
+    return ESP_ERR_NO_MEM;
+
+  snprintf(buf, 1024,
+           "<label>Wi-Fi SSID</label><input name='ssid' value='%s' "
+           "maxlength='63' required>"
+           "<label>Senha Wi-Fi</label><input name='pass' value='%s' "
+           "type='password' maxlength='63'>"
+           "<label>Token OpenAI (sk-...)</label><input name='token' value='%s' "
+           "maxlength='219' required>"
+           "<label>URL Base da IA</label><input name='base_url' value='%s' "
+           "maxlength='127'>"
+           "<label>Modelo da IA</label><input name='model' value='%s' "
+           "maxlength='63'>",
+           conf->wifi_ssid, conf->wifi_pass, conf->ai_token, conf->ai_base_url,
+           conf->ai_model);
+  httpd_resp_sendstr_chunk(req, buf);
+
+  snprintf(buf, 1024,
+           "<label>Personalidade da IA</label><textarea name='personality' "
+           "maxlength='255'>%s</textarea>"
+           "<hr style='border:1px solid #0f3460;margin:16px 0'>"
+           "<p style='color:#e94560;margin:0 0 8px 0'><b>Perfis (Natureza, "
+           "Prompt, Termos)</b></p>",
+           conf->ai_personality);
+  httpd_resp_sendstr_chunk(req, buf);
+
+  // Part 3: Profiles
+  // Profile 1 (Geral)
+  snprintf(buf, 1024,
+           "<label>Perfil 1 - Nome</label><input name='gn' value='%s' "
+           "maxlength='31'>"
+           "<label>Perfil 1 - Prompt</label><textarea name='gp' "
+           "maxlength='511'>%s</textarea>"
+           "<label>Perfil 1 - Termos</label><input name='gt' value='%s' "
+           "maxlength='255'>",
+           conf->profile_general_name, conf->profile_general_prompt,
+           conf->profile_general_terms);
+  httpd_resp_sendstr_chunk(req, buf);
+
+  // Profile 2 (Agrônomo)
+  snprintf(buf, 1024,
+           "<label>Perfil 2 - Nome</label><input name='an' value='%s' "
+           "maxlength='31'>"
+           "<label>Perfil 2 - Prompt</label><textarea name='ap' "
+           "maxlength='511'>%s</textarea>"
+           "<label>Perfil 2 - Termos</label><input name='at' value='%s' "
+           "maxlength='255'>",
+           conf->profile_agronomo_name, conf->profile_agronomo_prompt,
+           conf->profile_agronomo_terms);
+  httpd_resp_sendstr_chunk(req, buf);
+
+  // Profile 3 (Engenheiro)
+  snprintf(buf, 1024,
+           "<label>Perfil 3 - Nome</label><input name='en' value='%s' "
+           "maxlength='31'>"
+           "<label>Perfil 3 - Prompt</label><textarea name='ep' "
+           "maxlength='511'>%s</textarea>"
+           "<label>Perfil 3 - Termos</label><input name='et' value='%s' "
+           "maxlength='255'>",
+           conf->profile_engenheiro_name, conf->profile_engenheiro_prompt,
+           conf->profile_engenheiro_terms);
+  httpd_resp_sendstr_chunk(req, buf);
+
+  // Part 4: Footer
+  httpd_resp_sendstr_chunk(
+      req,
+      "<button type='submit'>&#128190; Salvar &amp; Reiniciar</button>"
+      "<p class='note'>O dispositivo reiniciar&aacute; ap&oacute;s salvar.</p>"
+      "</form></body></html>");
+
+  free(buf);
+  httpd_resp_sendstr_chunk(req, NULL);
   return ESP_OK;
 }
 
@@ -214,11 +278,20 @@ static bool form_get_field(const char *body, const char *key, char *dst,
   char search[72];
   snprintf(search, sizeof(search), "%s=", key);
   const char *p = strstr(body, search);
+
+  // More robust search: must be at the start of body or preceded by '&'
+  while (p) {
+    if (p == body || *(p - 1) == '&') {
+      break;
+    }
+    p = strstr(p + 1, search);
+  }
+
   if (!p)
     return false;
   p += strlen(search);
 
-  char raw[512] = {0};
+  char raw[1024] = {0};
   size_t ri = 0;
   while (*p && *p != '&' && ri < sizeof(raw) - 1) {
     raw[ri++] = *p++;
@@ -229,7 +302,7 @@ static bool form_get_field(const char *body, const char *key, char *dst,
 }
 
 static esp_err_t post_save_handler(httpd_req_t *req) {
-  if (req->content_len == 0 || req->content_len > 2048) {
+  if (req->content_len == 0 || req->content_len > 4096) {
     httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid content length");
     return ESP_FAIL;
   }
@@ -255,12 +328,37 @@ static esp_err_t post_save_handler(httpd_req_t *req) {
   char base_url[128] = {0};
   char model[64] = {0};
 
+  char p_gen_name[32] = {0};
+  char p_gen_prompt[512] = {0};
+  char p_gen_terms[256] = {0};
+
+  char p_agr_name[32] = {0};
+  char p_agr_prompt[512] = {0};
+  char p_agr_terms[256] = {0};
+
+  char p_eng_name[32] = {0};
+  char p_eng_prompt[512] = {0};
+  char p_eng_terms[256] = {0};
+
   form_get_field(body, "ssid", ssid, sizeof(ssid));
   form_get_field(body, "pass", pass, sizeof(pass));
   form_get_field(body, "token", token, sizeof(token));
   form_get_field(body, "personality", personality, sizeof(personality));
   form_get_field(body, "base_url", base_url, sizeof(base_url));
   form_get_field(body, "model", model, sizeof(model));
+
+  form_get_field(body, "gn", p_gen_name, sizeof(p_gen_name));
+  form_get_field(body, "gp", p_gen_prompt, sizeof(p_gen_prompt));
+  form_get_field(body, "gt", p_gen_terms, sizeof(p_gen_terms));
+
+  form_get_field(body, "an", p_agr_name, sizeof(p_agr_name));
+  form_get_field(body, "ap", p_agr_prompt, sizeof(p_agr_prompt));
+  form_get_field(body, "at", p_agr_terms, sizeof(p_agr_terms));
+
+  form_get_field(body, "en", p_eng_name, sizeof(p_eng_name));
+  form_get_field(body, "ep", p_eng_prompt, sizeof(p_eng_prompt));
+  form_get_field(body, "et", p_eng_terms, sizeof(p_eng_terms));
+
   free(body);
 
   if (strlen(ssid) == 0 || strlen(token) == 0) {
@@ -275,6 +373,18 @@ static esp_err_t post_save_handler(httpd_req_t *req) {
   esp_err_t save_err = config_manager_update_and_save(
       ssid, pass, token, strlen(personality) > 0 ? personality : NULL,
       strlen(base_url) > 0 ? base_url : NULL, strlen(model) > 0 ? model : NULL);
+
+  config_manager_update_profiles(strlen(p_gen_name) > 0 ? p_gen_name : NULL,
+                                 strlen(p_gen_prompt) > 0 ? p_gen_prompt : NULL,
+                                 strlen(p_gen_terms) > 0 ? p_gen_terms : NULL,
+
+                                 strlen(p_agr_name) > 0 ? p_agr_name : NULL,
+                                 strlen(p_agr_prompt) > 0 ? p_agr_prompt : NULL,
+                                 strlen(p_agr_terms) > 0 ? p_agr_terms : NULL,
+
+                                 strlen(p_eng_name) > 0 ? p_eng_name : NULL,
+                                 strlen(p_eng_prompt) > 0 ? p_eng_prompt : NULL,
+                                 strlen(p_eng_terms) > 0 ? p_eng_terms : NULL);
 
   if (save_err != ESP_OK) {
     ESP_LOGE(TAG, "Failed to save config: %s", esp_err_to_name(save_err));
@@ -324,6 +434,11 @@ static httpd_handle_t start_http_server(void) {
   config.server_port = 80;
   config.max_open_sockets = 7;
   config.uri_match_fn = httpd_uri_match_wildcard;
+  config.stack_size = 8192;
+  config.max_uri_handlers = 10;
+  config.max_resp_headers = 10;
+  config.recv_wait_timeout = 10;
+  config.send_wait_timeout = 10;
 
   httpd_handle_t server = NULL;
   if (httpd_start(&server, &config) != ESP_OK) {
@@ -476,12 +591,32 @@ esp_err_t captive_portal_start(void) {
     return ESP_FAIL;
   }
 
-  /* Aguarda configuração via browser — restart acontece no handler POST */
-  ESP_LOGI(TAG,
-           "Portal active at http://" AP_IP " — waiting for browser config...");
+  /* Aguarda configuração via browser ou cancelamento via botão físico */
+  ESP_LOGI(TAG, "Portal active at http://" AP_IP
+                " — waiting for config or button interrupt...");
+
+  // Consome o pressionamento inicial (o usuário segurou por 10s para entrar
+  // aqui) Só começa a monitorar a interrupção após o botão ser solto.
+  while (bsp_button_is_pressed()) {
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
+
   while (1) {
-    vTaskDelay(pdMS_TO_TICKS(2000));
-    ESP_LOGD(TAG, "Portal active, waiting...");
+    vTaskDelay(pdMS_TO_TICKS(500));
+
+    if (bsp_button_is_pressed()) {
+      ESP_LOGW(TAG,
+               "Configuration interrupted by user (physical button pressed)");
+      gui_set_response("Cancelando...\nReiniciando...");
+      vTaskDelay(pdMS_TO_TICKS(1500));
+      esp_restart();
+    }
+
+    static uint32_t s_log_tick = 0;
+    if (pdTICKS_TO_MS(xTaskGetTickCount() - s_log_tick) > 5000) {
+      ESP_LOGD(TAG, "Portal active, waiting (press button to cancel)...");
+      s_log_tick = xTaskGetTickCount();
+    }
   }
 
   return ESP_OK;

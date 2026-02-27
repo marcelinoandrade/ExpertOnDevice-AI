@@ -426,23 +426,12 @@ static void app_set_state(app_state_t state);
 static const char *app_profile_system_prompt(app_expert_profile_t profile) {
   switch (profile) {
   case APP_EXPERT_PROFILE_AGRONOMO:
-    return "Perfil ativo: Agronomo. "
-           "Ao ver plantas, identifique especie se possivel, avalie saude (cor "
-           "das folhas, manchas, pragas visiveis). "
-           "Sugira diagnostico provavel e acao imediata (ex: aplicar "
-           "fungicida, irrigar, podar).";
+    return config_manager_get()->profile_agronomo_prompt;
   case APP_EXPERT_PROFILE_ENGENHEIRO:
-    return "Perfil ativo: Engenheiro. "
-           "Ao ver circuitos/equipamentos, identifique componentes, leia "
-           "valores (resistores, capacitores), "
-           "note estado de LEDs, conexoes soltas ou queimadas. Sugira ponto de "
-           "verificacao.";
+    return config_manager_get()->profile_engenheiro_prompt;
   case APP_EXPERT_PROFILE_GENERAL:
   default:
-    return "Perfil ativo: Geral. "
-           "Responda de forma pratica e direta. "
-           "Identifique objetos, leia textos, descreva cenas. Sempre tente ser "
-           "util.";
+    return config_manager_get()->profile_general_prompt;
   }
 }
 
@@ -450,14 +439,12 @@ static const char *
 app_profile_transcription_terms(app_expert_profile_t profile) {
   switch (profile) {
   case APP_EXPERT_PROFILE_AGRONOMO:
-    return "NPK, fusarium, clorose, necrose, oidio, ferrugem, praga, "
-           "fungicida, herbicida, irrigacao, vazao";
+    return config_manager_get()->profile_agronomo_terms;
   case APP_EXPERT_PROFILE_ENGENHEIRO:
-    return "set-point, vazao, corrente, tensao, curto, rele, inversor, sensor, "
-           "atuador, LED vermelho, falha";
+    return config_manager_get()->profile_engenheiro_terms;
   case APP_EXPERT_PROFILE_GENERAL:
   default:
-    return "NPK, fusarium, set-point, vazao";
+    return config_manager_get()->profile_general_terms;
   }
 }
 
@@ -744,10 +731,11 @@ static void app_set_state(app_state_t next_state) {
   const char *state_str = "";
   switch (next_state) {
   case APP_STATE_IDLE: {
-    const char *p_name =
-        (s_expert_profile == APP_EXPERT_PROFILE_AGRONOMO)     ? "Agronomo"
-        : (s_expert_profile == APP_EXPERT_PROFILE_ENGENHEIRO) ? "Engenheiro"
-                                                              : "Geral";
+    const char *p_name = (s_expert_profile == APP_EXPERT_PROFILE_AGRONOMO)
+                             ? config_manager_get()->profile_agronomo_name
+                         : (s_expert_profile == APP_EXPERT_PROFILE_ENGENHEIRO)
+                             ? config_manager_get()->profile_engenheiro_name
+                             : config_manager_get()->profile_general_name;
     snprintf(state_buf, sizeof(state_buf), "Pronto - %s", p_name);
     state_str = state_buf;
     break;
@@ -1010,10 +998,17 @@ static void app_task(void *arg) {
         s_last_click_ms = now;
         if (s_state == APP_STATE_IDLE || s_state == APP_STATE_ERROR ||
             s_state == APP_STATE_SHOWING_RESPONSE) {
-          ESP_LOGI(TAG, "button pressed -> start recording");
-          const app_event_t interaction_evt = {
-              .type = APP_EVT_INTERACTION_REQUESTED};
-          xQueueSend(s_app_queue, &interaction_evt, 0);
+
+          if (!gui_is_profile_pressed()) {
+            ESP_LOGI(TAG, "button pressed -> start recording");
+            const app_event_t interaction_evt = {
+                .type = APP_EVT_INTERACTION_REQUESTED};
+            xQueueSend(s_app_queue, &interaction_evt, 0);
+          } else {
+            ESP_LOGI(
+                TAG,
+                "button pressed with M held -> deferring recording for portal");
+          }
         }
       }
     }
@@ -1023,7 +1018,7 @@ static void app_task(void *arg) {
      * Detecção de Long-Press (10 s) para Captive Portal
      * Trigger: Physical Button + Touch Profile Button ('M')
      * -------------------------------------------------------- */
-    if (button_pressed && gui_is_profile_pressed()) {
+    if (!button_pressed && gui_is_profile_pressed()) {
       if (!s_config_longpress_active) {
         s_config_longpress_active = true;
         s_config_longpress_start = xTaskGetTickCount();

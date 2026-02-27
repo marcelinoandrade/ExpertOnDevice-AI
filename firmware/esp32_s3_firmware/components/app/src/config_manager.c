@@ -36,6 +36,32 @@ static app_config_t s_config = {
     .ai_model = "gpt-4o", /* O modelo padrão de visão. Áudio usa preview
                              estático se não houver endpoint de áudio */
     .expert_profile = APP_EXPERT_PROFILE_GENERAL,
+
+    .profile_general_name = "Geral",
+    .profile_general_prompt =
+        "Perfil ativo: Geral. Responda de forma pratica e direta. Identifique "
+        "objetos, leia textos, descreva cenas. Sempre tente ser util.",
+    .profile_general_terms = "NPK, fusarium, set-point, vazao",
+
+    .profile_agronomo_name = "Agronomo",
+    .profile_agronomo_prompt =
+        "Perfil ativo: Agronomo. Ao ver plantas, identifique especie se "
+        "possivel, avalie saude (cor das folhas, manchas, pragas visiveis). "
+        "Sugira diagnostico provavel e acao imediata (ex: aplicar fungicida, "
+        "irrigar, podar).",
+    .profile_agronomo_terms =
+        "NPK, fusarium, clorose, necrose, oidio, ferrugem, praga, fungicida, "
+        "herbicida, irrigacao, vazao",
+
+    .profile_engenheiro_name = "Engenheiro",
+    .profile_engenheiro_prompt =
+        "Perfil ativo: Engenheiro. Ao ver circuitos/equipamentos, identifique "
+        "componentes, leia valores (resistores, capacitores), note estado de "
+        "LEDs, conexoes soltas ou queimadas. Sugira ponto de verificacao.",
+    .profile_engenheiro_terms =
+        "set-point, vazao, corrente, tensao, curto, rele, inversor, sensor, "
+        "atuador, LED vermelho, falha",
+
     .volume = 70,
     .brightness = 85,
     .loaded = false,
@@ -171,6 +197,48 @@ esp_err_t config_manager_load(void) {
         s_config.expert_profile = (app_expert_profile_t)p_val;
       }
     }
+
+    const cJSON *profiles = cJSON_GetObjectItemCaseSensitive(ai, "profiles");
+    if (profiles) {
+      const cJSON *gen = cJSON_GetObjectItemCaseSensitive(profiles, "general");
+      if (gen) {
+        safe_copy(s_config.profile_general_name,
+                  sizeof(s_config.profile_general_name),
+                  cJSON_GetObjectItemCaseSensitive(gen, "name"));
+        safe_copy(s_config.profile_general_prompt,
+                  sizeof(s_config.profile_general_prompt),
+                  cJSON_GetObjectItemCaseSensitive(gen, "prompt"));
+        safe_copy(s_config.profile_general_terms,
+                  sizeof(s_config.profile_general_terms),
+                  cJSON_GetObjectItemCaseSensitive(gen, "terms"));
+      }
+      const cJSON *agro =
+          cJSON_GetObjectItemCaseSensitive(profiles, "agronomo");
+      if (agro) {
+        safe_copy(s_config.profile_agronomo_name,
+                  sizeof(s_config.profile_agronomo_name),
+                  cJSON_GetObjectItemCaseSensitive(agro, "name"));
+        safe_copy(s_config.profile_agronomo_prompt,
+                  sizeof(s_config.profile_agronomo_prompt),
+                  cJSON_GetObjectItemCaseSensitive(agro, "prompt"));
+        safe_copy(s_config.profile_agronomo_terms,
+                  sizeof(s_config.profile_agronomo_terms),
+                  cJSON_GetObjectItemCaseSensitive(agro, "terms"));
+      }
+      const cJSON *eng =
+          cJSON_GetObjectItemCaseSensitive(profiles, "engenheiro");
+      if (eng) {
+        safe_copy(s_config.profile_engenheiro_name,
+                  sizeof(s_config.profile_engenheiro_name),
+                  cJSON_GetObjectItemCaseSensitive(eng, "name"));
+        safe_copy(s_config.profile_engenheiro_prompt,
+                  sizeof(s_config.profile_engenheiro_prompt),
+                  cJSON_GetObjectItemCaseSensitive(eng, "prompt"));
+        safe_copy(s_config.profile_engenheiro_terms,
+                  sizeof(s_config.profile_engenheiro_terms),
+                  cJSON_GetObjectItemCaseSensitive(eng, "terms"));
+      }
+    }
   }
 
   /* hardware */
@@ -225,6 +293,29 @@ esp_err_t config_manager_save(void) {
   cJSON_AddStringToObject(ai, "base_url", s_config.ai_base_url);
   cJSON_AddStringToObject(ai, "model", s_config.ai_model);
   cJSON_AddNumberToObject(ai, "expert_profile", (int)s_config.expert_profile);
+
+  cJSON *profiles = cJSON_CreateObject();
+
+  cJSON *gen = cJSON_CreateObject();
+  cJSON_AddStringToObject(gen, "name", s_config.profile_general_name);
+  cJSON_AddStringToObject(gen, "prompt", s_config.profile_general_prompt);
+  cJSON_AddStringToObject(gen, "terms", s_config.profile_general_terms);
+  cJSON_AddItemToObject(profiles, "general", gen);
+
+  cJSON *agro = cJSON_CreateObject();
+  cJSON_AddStringToObject(agro, "name", s_config.profile_agronomo_name);
+  cJSON_AddStringToObject(agro, "prompt", s_config.profile_agronomo_prompt);
+  cJSON_AddStringToObject(agro, "terms", s_config.profile_agronomo_terms);
+  cJSON_AddItemToObject(profiles, "agronomo", agro);
+
+  cJSON *eng = cJSON_CreateObject();
+  cJSON_AddStringToObject(eng, "name", s_config.profile_engenheiro_name);
+  cJSON_AddStringToObject(eng, "prompt", s_config.profile_engenheiro_prompt);
+  cJSON_AddStringToObject(eng, "terms", s_config.profile_engenheiro_terms);
+  cJSON_AddItemToObject(profiles, "engenheiro", eng);
+
+  cJSON_AddItemToObject(ai, "profiles", profiles);
+
   cJSON_AddItemToObject(root, "ai", ai);
 
   /* hardware */
@@ -299,6 +390,44 @@ esp_err_t config_manager_update_and_save(const char *ssid, const char *pass,
     strlcpy(s_config.ai_base_url, ai_base_url, sizeof(s_config.ai_base_url));
   if (ai_model)
     strlcpy(s_config.ai_model, ai_model, sizeof(s_config.ai_model));
+  s_config.loaded = true;
+  return config_manager_save();
+}
+
+esp_err_t config_manager_update_profiles(
+    const char *gen_name, const char *gen_prompt, const char *gen_terms,
+    const char *agro_name, const char *agro_prompt, const char *agro_terms,
+    const char *eng_name, const char *eng_prompt, const char *eng_terms) {
+  if (gen_name)
+    strlcpy(s_config.profile_general_name, gen_name,
+            sizeof(s_config.profile_general_name));
+  if (gen_prompt)
+    strlcpy(s_config.profile_general_prompt, gen_prompt,
+            sizeof(s_config.profile_general_prompt));
+  if (gen_terms)
+    strlcpy(s_config.profile_general_terms, gen_terms,
+            sizeof(s_config.profile_general_terms));
+
+  if (agro_name)
+    strlcpy(s_config.profile_agronomo_name, agro_name,
+            sizeof(s_config.profile_agronomo_name));
+  if (agro_prompt)
+    strlcpy(s_config.profile_agronomo_prompt, agro_prompt,
+            sizeof(s_config.profile_agronomo_prompt));
+  if (agro_terms)
+    strlcpy(s_config.profile_agronomo_terms, agro_terms,
+            sizeof(s_config.profile_agronomo_terms));
+
+  if (eng_name)
+    strlcpy(s_config.profile_engenheiro_name, eng_name,
+            sizeof(s_config.profile_engenheiro_name));
+  if (eng_prompt)
+    strlcpy(s_config.profile_engenheiro_prompt, eng_prompt,
+            sizeof(s_config.profile_engenheiro_prompt));
+  if (eng_terms)
+    strlcpy(s_config.profile_engenheiro_terms, eng_terms,
+            sizeof(s_config.profile_engenheiro_terms));
+
   s_config.loaded = true;
   return config_manager_save();
 }
