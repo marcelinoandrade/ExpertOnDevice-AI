@@ -25,11 +25,11 @@
 
 ---
 
-## 🚀 Plataforma "Expert-on-Device": Diferenciais Estratégicos
+## 🚀 Plataforma "Expert-on-Device": Soberania dos Dados e Diferenciais Estratégicos
 
 Mais do que um simples "assistente de IA", esta é uma **plataforma multimodal, configurável e soberana para aplicações profissionais**, desenhada para implantação em escala e múltiplos modelos de monetização.
 
-- **🤖 LLM Agnóstico & Edge Computing**: Troque de modelo (OpenAI, Claude, Groq) dinamicamente via Portal Web ou rode um LLM *On-Premise*. Garante **privacidade total** e ausência de *vendor lock-in*.
+- **🤖 LLM Agnóstico & Edge Computing**: Troque de modelo (OpenAI, Claude, Groq) dinamicamente via Portal Web ou rode um LLM *On-Premise*. Garante **privacidade total, soberania dos dados** e ausência de *vendor lock-in*.
 - **💼 Perfis Especialistas (B2B)**: Implante o comportamento de "agrônomos", "mecânicos" ou "tutores" no mesmo hardware embarcado mudando apenas o contexto. Cria linhas de produto segmentadas de alto valor.
 - **💸 Hardware Custo-Efetivo (< U$33)**: Base em ESP32-S3 e P4-EYE garante baixíssimo CAPEX, viabilizando vendas em larga escala para frotas industriais, escolas e hospitais.
 - **👁️ Multimodalidade + Auditoria Local**: Combina interação por voz e câmera em tempo real, enquanto logs nativos automatizados no Cartão SD cuidam do *compliance* institucional.
