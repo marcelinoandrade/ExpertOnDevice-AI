@@ -374,16 +374,48 @@ static esp_err_t app_extract_response_text(const char *json, char *out_text,
     // Format 2: Standard text in message.content
     if (cJSON_IsString(content) && content->valuestring) {
       strlcpy(out_text, content->valuestring, out_text_len);
-      // Clean up enclosed JSON wrappers if model hallucinated a JSON string
-      // (e.g. `{"text": "..."}`)
-      if (out_text[0] == '{' && strchr(out_text, '}')) {
+
+      // Clean up enclosed JSON wrappers if model hallucinated a data structure
+      if (out_text[0] == '{' || out_text[0] == '[') {
         cJSON *inner = cJSON_Parse(out_text);
+
+        // Handle single-quote 'Python-style' dictionaries by replacing with "
+        if (!inner && out_text[0] == '{') {
+          char *tmp = strdup(out_text);
+          if (tmp) {
+            for (int i = 0; tmp[i]; i++)
+              if (tmp[i] == '\'')
+                tmp[i] = '\"';
+            inner = cJSON_Parse(tmp);
+            free(tmp);
+          }
+        }
+
         if (inner) {
           cJSON *inner_text = cJSON_GetObjectItemCaseSensitive(inner, "text");
           if (!inner_text)
             inner_text = cJSON_GetObjectItemCaseSensitive(inner, "response");
+
           if (cJSON_IsString(inner_text) && inner_text->valuestring) {
             strlcpy(out_text, inner_text->valuestring, out_text_len);
+          } else if (cJSON_IsObject(inner)) {
+            // Robust formatting: extract all keys if no specific text field
+            // found e.g. {"key": "value"} -> "key: value"
+            char *formatted = (char *)calloc(1, out_text_len);
+            if (formatted) {
+              cJSON *item = NULL;
+              cJSON_ArrayForEach(item, inner) {
+                if (item->string && cJSON_IsString(item) && item->valuestring) {
+                  char line[128];
+                  snprintf(line, sizeof(line), "%s: %s\n", item->string,
+                           item->valuestring);
+                  strlcat(formatted, line, out_text_len);
+                }
+              }
+              if (formatted[0] != '\0')
+                strlcpy(out_text, formatted, out_text_len);
+              free(formatted);
+            }
           }
           cJSON_Delete(inner);
         }
@@ -480,7 +512,9 @@ static esp_err_t app_build_ai_request_json(
   snprintf(
       system_content, 1024,
       "Voce e um assistente por voz embarcado (apenas audio). "
-      "REGRA PRINCIPAL: responda EXATAMENTE o que o usuario perguntou. "
+      "REGRA PRINCIPAL: responda em LINGUAGEM NATURAL, como se estivesse "
+      "conversando. "
+      "NUNCA responda usando formatos de dados (JSON, dicionarios, listas). "
       "Formato: portugues-BR, texto plano, sem markdown, sem emojis, ASCII "
       "apenas. "
       "Maximo 60 palavras. Quebre linhas a cada ~30 chars para caber na tela. "
