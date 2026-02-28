@@ -1,3 +1,5 @@
+<div align="center">
+
 # 🤖 ESP32 AI Assistant
 
 ### *Transforme um microcontrolador em um Assistente de IA com Visão por Câmera — Sem Nuvem Proprietária, Sem Assinatura Mensal, 100% Seu.*
@@ -11,12 +13,14 @@
 
 ---
 
-> **"O menor assistente de IA com câmera do mundo — e você pode construir um hoje."**
+> **"Um portátil assistente de IA com câmera — e você pode construir um hoje."**
 
 
 <video src="https://github.com/user-attachments/assets/cf833a62-3809-4c02-ae4d-6812c46d103d" controls width="720">
   <a href="https://github.com/user-attachments/assets/cf833a62-3809-4c02-ae4d-6812c46d103d">▶ Ver demonstração em vídeo</a>
 </video>
+
+</div>
 
 ---
 
@@ -81,6 +85,8 @@ A arquitetura do firmware foi desenhada para suportar qualquer provedor via API 
 
 ## 📱 Duas versões, um ecossistema
 
+<div align="center">
+
 ### 🟢 ESP32-S3 — A versão LITE
 
 <video src="https://github.com/user-attachments/assets/b09528aa-6595-4580-8ac2-b57701bd5fd9" controls width="100%" style="max-width: 720px;">
@@ -91,6 +97,8 @@ A arquitetura do firmware foi desenhada para suportar qualquer provedor via API 
 
 | ![S3 - Vista 1](imagens/s3_00.png) | ![S3 - Vista 2](imagens/s3_01.png) | ![S3 - Vista 3](imagens/s3_03.png) |
 |---|---|---|
+
+</div>
  
 **Hardware:** Kits ESP32-S3 (ex: ESP32-S3-Touch-LCD) a partir de **~U$20**
  
@@ -106,10 +114,14 @@ A arquitetura do firmware foi desenhada para suportar qualquer provedor via API 
  
 ---
  
+<div align="center">
+
 ### 🔵 ESP32-P4-EYE — A versão PRO
 
 | ![P4 - Vista 1](imagens/p4_00.png) | ![P4 - Vista 2](imagens/p4_01.png) | ![P4 - Vista 3](imagens/p4_02.png) |
 |---|---|---|
+
+</div>
  
 **Hardware:** ESP32-P4 + OV2710 (2MP) + MIPI-DSI Display + Wi-Fi C6 Co-processor
  
@@ -170,7 +182,11 @@ A arquitetura do firmware foi desenhada para suportar qualquer provedor via API 
 
 ## 🧠 Expert-on-Device — O Conceito que Muda Tudo
 
+<div align="center">
+
 ![Expert-on-Device — Assistente físico multicontextual com perfis profissionais nativos](imagens/Expert_on_Device.jpeg)
+
+</div>
 
 O **Expert-on-Device** é a ideia central que diferencia este projeto de um simples "botãozinho que chama o ChatGPT".
 
@@ -451,6 +467,10 @@ git push origin feature/wake-word-local
 
 ---
 
+<div align="center">
+
 **🇧🇷 Feito no Brasil | ESP32 AI Assistant**
 
 [⭐ Star](../../stargazers) · [🐛 Issues](../../issues) · [💼 Licença Comercial](mailto:mrclnndrd@gmail.com) · [🤝 Contribuir](../../pulls)
+
+</div>
