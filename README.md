@@ -8,7 +8,7 @@
 [![Commercial License](https://img.shields.io/badge/Licença%20Comercial-Solicitar-brightgreen.svg)](mailto:mrclnndrd@gmail.com)
 [![ESP-IDF](https://img.shields.io/badge/ESP--IDF-v5.5.1-red.svg)](https://github.com/espressif/esp-idf)
 [![LLM](https://img.shields.io/badge/LLM-OpenAI%20%7C%20Claude%20%7C%20Groq%20(roadmap)-purple.svg)]()
-[![Platform](https://img.shields.io/badge/Platform-ESP32--P4%20%7C%20ESP32--S3-orange.svg)]()
+[![Platform](https://img.shields.io/badge/Platform-ESP32--S3%20%7C%20ESP32--P4-orange.svg)]()
 [![Made in Brazil](https://img.shields.io/badge/Made%20in-Brazil%20🇧🇷-green.svg)]()
 
 ---
@@ -31,7 +31,7 @@ Mais do que um simples "assistente de IA", esta é uma **plataforma multimodal, 
 
 - **🤖 LLM Agnóstico & Edge Computing**: Troque de modelo (OpenAI, Claude, Groq) dinamicamente via Portal Web ou rode um LLM *On-Premise*. Garante **privacidade total, soberania dos dados** e ausência de *vendor lock-in*.
 - **💼 Perfis Especialistas (B2B)**: Implante o comportamento de "agrônomos", "mecânicos" ou "tutores" no mesmo hardware embarcado mudando apenas o contexto. Cria linhas de produto segmentadas de alto valor.
-- **💸 Hardware Custo-Efetivo (< U$33)**: Base em ESP32-S3 e P4-EYE garante baixíssimo CAPEX, viabilizando vendas em larga escala para frotas industriais, escolas e hospitais.
+- **💸 Hardware Custo-Efetivo (< U$33)**: Base em ESP32-S3 (Lite) e P4 (Pro) garante baixíssimo CAPEX, viabilizando vendas em larga escala para frotas industriais, escolas e hospitais.
 - **👁️ Multimodalidade + Auditoria Local**: Combina interação por voz e câmera em tempo real, enquanto logs nativos automatizados no Cartão SD cuidam do *compliance* institucional.
 - **🧩 Ecossistema e Licenciamento**: Firmware modular pronto para acordos OEM. Permite receita recorrente vendendo atualizações de "perfis especialistas como serviço" muito além da simples venda do hardware.
 
@@ -41,21 +41,21 @@ Mais do que um simples "assistente de IA", esta é uma **plataforma multimodal, 
 
 | | ✅ ESP32 AI Assistant | ❌ Soluções Típicas |
 |---|---|---|
-| 💰 Custo do hardware | **U$33 (P4-EYE no DigiKey) ou U$20 (S3)** | U$200 a U$2.000+ |
+| 💰 Custo do hardware | **U$20 (S3)** ou U$33 (P4-EYE) | U$200 a U$2.000+ |
 | 🌐 Servidor próprio | **Opcional (suporta on-premise)** | Obrigatório |
 | 🤖 Modelo de IA | **Agnóstico a provedores (suporte a cloud ou LLM próprio)** | Preso a 1 fornecedor |
-| 📷 Visão Computacional | **Sim — câmera 2MP embarcada** | Limitada ou dependente de cloud |
+| 📷 Visão Computacional | **Sim — na versão P4 Pro** | Limitada ou dependente de cloud |
 | 🎙️ Processamento de Voz | **Tempo real, edge** | Nuvem obrigatória |
 | 🔐 **Privacidade dos dados** | **Processamento local (on-premise)** | Dados em servidores de terceiros |
-| 🔋 Consumo de energia | **Ultra baixo** | Alto |
-| 👕 **Wearable** | **✅ Versão S3** é compacta o suficiente | ❌ Raro / dependente de ecossistema proprietário |
+| 🔋 Consumo de energia | **Ultra baixo (S3 Lite)** | Alto |
+| 👕 **Wearable** | **✅ Versão S3 Lite** é otimizada para isso | ❌ Raro / dependente de ecossistema proprietário |
 | 📦 Tamanho | **Menor que um baralho** | Desktop ou servidor |
 
 ---
 
 ## 🔓 Arquitetura Aberta — LLM Agnóstico
 
-> **Estado atual:** O projeto na versão **ESP32-P4** agora é **100% agnóstico de LLM de forma Dinâmica** — você pode transitar livremente por diversos provedores de Inteligência Artificial (OpenAI, Anthropic Claude, Groq, Ollama local) instantaneamente modificando as opções via Web, sem a necessidade de plugar cabos ou recompilar o firmware!
+> **Estado atual:** O firmware do **ESP32-S3 Lite** agora é o **carro-chefe** do projeto, sendo 100% agnóstico de LLM de forma Dinâmica — você mude provedores (OpenAI, Anthropic, Groq, Ollama) via Web sem recompilar! A versão ESP32-P4 Pro segue o mesmo padrão de excelência.
 
 A arquitetura do firmware foi desenhada para suportar qualquer provedor via API REST. Quando implementado, bastará editar o `settings.json`:
 
@@ -88,61 +88,60 @@ A arquitetura do firmware foi desenhada para suportar qualquer provedor via API 
 
 <div align="center">
 
-### 🔵 ESP32-P4-EYE — A versão PRO
-
-| ![P4 - Vista 1](imagens/p4_00.png) | ![P4 - Vista 2](imagens/p4_01.png) | ![P4 - Vista 3](imagens/p4_02.png) |
-|---|---|---|
-
-</div>
-
-**Hardware:** ESP32-P4 + ESP32-C6 Wi-Fi co-processor + OV2710 (2MP ISP) + Display + SD Card
-
-- 📷 Câmera 2MP com ISP avançado: AWB, AGC, AE automáticos
-- 🖥️ Display LVGL com scroll de resposta e OSD nativo (Wi-Fi e Bateria)
-- 💾 SD Card: salva fotos, áudios (WAV), logs de conversa diários
-- 🌐 Wi-Fi via ESP32-C6 (ESP-Hosted) com tolerância a falhas (NVS Cache)
-- 🕐 SNTP: timestamps precisos em todos os arquivos salvos
-- ⚙️ **Captive Portal**: configura Wi-Fi e IA via browser em 30 segundos
-- 🔊 Microfone PDM integrado + Leitura Analógica (ADC) do nível de bateria
-- 👁️ Dois modos: **Voz** (só áudio) e **Foto+Voz** (câmera + áudio)
-
----
-
 <div align="center">
-
-### 🟢 ESP32-S3 — A versão ACESSÍVEL e WEARÁVEL
-
+ 
+### 🟢 ESP32-S3 — A versão LITE (Carro-chefe)
+ 
 <video src="https://github.com/user-attachments/assets/b09528aa-6595-4580-8ac2-b57701bd5fd9" controls width="100%" style="max-width: 720px;">
   <a href="https://github.com/user-attachments/assets/b09528aa-6595-4580-8ac2-b57701bd5fd9">▶ Ver demonstração do S3 em vídeo</a>
 </video>
-
-> *Demonstração do assistente operando em modo de baixo consumo e resposta fluida.*
-
+ 
+> *Firmware de ponta: Resposta fluida, Deep Sleep e filtragem RMS inteligente.*
+ 
 | ![S3 - Vista 1](imagens/s3_00.png) | ![S3 - Vista 2](imagens/s3_01.png) | ![S3 - Vista 3](imagens/s3_03.png) |
 |---|---|---|
-
+ 
 </div>
-**Hardware:** Kits ESP32-S3 com Microfone e Display (ex: ESP32-S3-Touch-LCD) a partir de **~U$20**
-
-- 🔋 **Bateria Otimizada**: Modo de baixo consumo interativo (**Deep Sleep**) integrado, dura dias. Reativação no clique via `Wake-on-Button`.
-- 🎙️ **Interação Fluida**: **Push-to-Talk** (Borda de hardware perfeita para Início e Fim da gravação). O visor preserva a resposta da IA até que você inicie uma nova gravação.
-- 🖥️ **Apoio Local (Offline)**: Grava áudios e logs de chats no **SD Card**, garantindo auditoria e fallback, com interface LVGL rodando em barramento SPI.
-- ⚡ **Arquitetura Robusta e Orientada a Eventos**: Gestão assíncrona com `FreeRTOS Queues`, uso intensivo dos 8MB de `PSRAM` para áudio (suportando até 20s de captura) impedindo *Out of Memory (OOM)*, e persistência inteligente (*Opportunistic Saving*).
-- 👕 **Tamanho Ideal**: Compacto, podendo servir de um assistente de bolso, smartwatch ou crachá corporativo inteligente.
-- 📡 **Conectividade Total**: Wi-Fi nativo operando sem chip auxiliar e Servidor Web de Configuração integrado (Captive Portal).
-
+ 
+**Hardware:** Kits ESP32-S3 (ex: ESP32-S3-Touch-LCD) a partir de **~U$20**
+ 
+- 🔋 **Bateria Otimizada**: Deep Sleep nativo (< µA), dura dias. Wake-on-Button instantâneo.
+- 🎙️ **Processamento Refinado**: Firmware avançado com filtragem de áudio RMS configurável via Web.
+- ⚙️ **Captive Portal**: Configura Wi-Fi, IA e Limiar de Áudio (VAD) dinamicamente.
+- ⚡ **Alta Robustez**: Gestão assíncrona com `FreeRTOS Queues` e uso otimizado de 8MB de `PSRAM`.
+- 💾 **Persistência Local**: Grava WAVs e logs de chat no SD Card (Opportunistic Saving).
+- 👕 **Ultra Portátil**: Ideal para assistentes de bolso, vestíveis ou crachás inteligentes.
+ 
 ---
-
-### Comparativo Físico das Versões
-
-| Feature | ESP32-S3 | ESP32-P4-EYE |
+ 
+<div align="center">
+ 
+### 🔵 ESP32-P4-EYE — A versão PRO
+ 
+| ![P4 - Vista 1](imagens/p4_00.png) | ![P4 - Vista 2](imagens/p4_01.png) | ![P4 - Vista 3](imagens/p4_02.png) |
 |---|---|---|
+ 
+</div>
+ 
+**Hardware:** ESP32-P4 + OV2710 (2MP) + MIPI-DSI Display + Wi-Fi C6 Co-processor
+ 
+- 📷 **Visão Computacional**: Câmera 2MP com hardware ISP para cores e exposição automáticas.
+- 🖥️ **Performance MIPI**: Display de alta resolução via barramento DSI (LVGL fluído).
+- 🌐 **Soberania Wi-Fi**: Conectividade via ESP32-C6 (ESP-Hosted) para máxima estabilidade.
+- 💾 **SDIO 4-Bit**: Armazenamento massivo de fotos e vídeos em alta velocidade.
+- ⚙️ **Modularidade**: Ideal para totens, estações fixas ou robôs que necessitam de visão.
+ 
+---
+ 
+### Comparativo Físico das Versões
+ 
+| Feature | ESP32-S3 (Lite) | ESP32-P4-EYE (Pro) |
+|---|---|---|
+| **Foco** | **Portabilidade / Bateria** | **Visão / Performance** |
 | **Câmera Integrada** | ❌ | ✅ 2 Megapixels |
 | **Interface LVGL** | ✅ ST7789 / SPI | ✅ Alta Performance / MIPI-DSI |
 | **Armazenamento SD** | ✅ Otimizado / SPI | ✅ Alta Velocidade / SDIO 4-Bit |
-| **Painel Web Portátil** | ✅ | ✅ |
-| **Date Time (SNTP)** | ✅ | ✅ |
-| **Arquitetura Wi-Fi** | STA Nativo Interno | Via C6 Auxiliar (ESP-Hosted)|
+| **Wi-Fi** | STA Nativo Interno | Via C6 Auxiliar (ESP-Hosted)|
 | **Bateria Otimizada** | ✅ Deep Sleep Nativo (< µA) | ❌ |
 
 ---
@@ -245,8 +244,8 @@ A arquitetura modular do projeto permite que a mesma lógica — captura de míd
 
 | Hardware | Onde comprar | Preço (referência) |
 |---|---|---|
-| **ESP32-P4-EYE** (versão PRO) | [DigiKey](https://www.digikey.com/en/products/detail/espressif-systems/ESP32-P4-EYE/26648584) / [AliExpress Oficial](https://www.aliexpress.com/item/1005007989949885.html) | **~U$33** (DigiKey) / **~U$50** (AliExpress) |
-| **ESP32-S3 DevKit com mic** | [AliExpress](https://aliexpress.com) | **~U$20–35** (varia por modelo) |
+| **ESP32-S3 Lite** com mic | [AliExpress](https://aliexpress.com) | **~U$20–35** |
+| **ESP32-P4-EYE Pro** | [DigiKey](https://www.digikey.com/en/products/detail/espressif-systems/ESP32-P4-EYE/26648584) | **~U$33** |
 | **ESP32-S3-BOX-3** (Espressif) | [DigiKey](https://www.digikey.com) / [Mouser](https://mouser.com) | **~U$40** (display + mic + speaker inclído) |
 | Microfone INMP441 (add-on S3) | [AliExpress](https://aliexpress.com) | **~U$2–5** |
 
@@ -370,8 +369,8 @@ Usuário → [Voz + Foto opcional]
 | 🔋 DHCP para cliente AP | **~200ms** (IP 192.168.4.2 confirmado) |
 | 🌐 Latência end-to-end (voz→resposta→save) | **~5–8 segundos** |
 
-👉 **[Ver análise completa dos logs do ESP32-P4-EYE →](docs/log_tecnico_p4.md)**  
-👉 **[Ver análise completa dos logs do ESP32-S3 →](docs/log_tecnico_s3.md)**
+👉 **[Ver análise completa dos logs do ESP32-S3 Lite →](docs/log_tecnico_s3.md)**  
+👉 **[Ver análise completa dos logs do ESP32-P4-EYE Pro →](docs/log_tecnico_p4.md)**
 
 ---
 
@@ -454,7 +453,7 @@ git push origin feature/wake-word-local
 
 Áreas onde contribuições são especialmente bem-vindas:
 - 🤖 **Homologar provedores e Testar compatibilidade de modelos Multimodais** (Anthropic Claude, Groq Whisper) e corrigir parsing de response na linguagem C se necessário
-- 🔗 **Levar a funcionalidade URL e Modelos Dinâmicos ao ESP32-S3** (recurso disponível atualmente para ESP32-P4)
+- 🔗 **Levar a funcionalidade Pro (Visão) ao ESP32-S3** (recurso disponível atualmente para ESP32-P4)
 - 📡 **OTA (Over-The-Air)**: atualização de firmware pelo ar via Wi-Fi — sem precisar de cabo USB em campo
 - 🔊 TTS (síntese de voz local)
 - 📱 App companion (BLE/Wi-Fi)

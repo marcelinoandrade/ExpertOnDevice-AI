@@ -64,6 +64,7 @@ static app_config_t s_config = {
 
     .volume = 70,
     .brightness = 85,
+    .audio_rms_threshold = 1000.0f,
     .loaded = false,
 };
 
@@ -246,11 +247,15 @@ esp_err_t config_manager_load(void) {
   if (hw) {
     const cJSON *vol = cJSON_GetObjectItemCaseSensitive(hw, "volume");
     const cJSON *bri = cJSON_GetObjectItemCaseSensitive(hw, "brightness");
+    const cJSON *rms = cJSON_GetObjectItemCaseSensitive(hw, "rms_threshold");
     if (cJSON_IsNumber(vol)) {
       s_config.volume = (uint8_t)vol->valueint;
     }
     if (cJSON_IsNumber(bri)) {
       s_config.brightness = (uint8_t)bri->valueint;
+    }
+    if (cJSON_IsNumber(rms)) {
+      s_config.audio_rms_threshold = (float)rms->valuedouble;
     }
   }
 
@@ -322,6 +327,7 @@ esp_err_t config_manager_save(void) {
   cJSON *hw = cJSON_CreateObject();
   cJSON_AddNumberToObject(hw, "volume", s_config.volume);
   cJSON_AddNumberToObject(hw, "brightness", s_config.brightness);
+  cJSON_AddNumberToObject(hw, "rms_threshold", s_config.audio_rms_threshold);
   cJSON_AddItemToObject(root, "hardware", hw);
 
   char *json_str = cJSON_PrintUnformatted(root);
@@ -376,7 +382,8 @@ esp_err_t config_manager_update_and_save(const char *ssid, const char *pass,
                                          const char *ai_token,
                                          const char *ai_personality,
                                          const char *ai_base_url,
-                                         const char *ai_model) {
+                                         const char *ai_model,
+                                         float audio_rms_threshold) {
   if (ssid)
     strlcpy(s_config.wifi_ssid, ssid, sizeof(s_config.wifi_ssid));
   if (pass)
@@ -390,6 +397,9 @@ esp_err_t config_manager_update_and_save(const char *ssid, const char *pass,
     strlcpy(s_config.ai_base_url, ai_base_url, sizeof(s_config.ai_base_url));
   if (ai_model)
     strlcpy(s_config.ai_model, ai_model, sizeof(s_config.ai_model));
+
+  s_config.audio_rms_threshold = audio_rms_threshold;
+
   s_config.loaded = true;
   return config_manager_save();
 }

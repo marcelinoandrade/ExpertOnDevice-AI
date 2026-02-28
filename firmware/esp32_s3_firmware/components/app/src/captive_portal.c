@@ -1,6 +1,7 @@
 #include "captive_portal.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "esp_err.h"
@@ -143,6 +144,53 @@ static void dns_server_task(void *pvParameters) {
 }
 
 /* -----------------------------------------------------------------------
+ * URL decode simples (application/x-www-form-urlencoded)
+ * ----------------------------------------------------------------------- */
+static void url_decode(char *dst, const char *src, size_t dst_max) {
+  size_t di = 0;
+  while (*src && di < dst_max - 1) {
+    if (*src == '%' && src[1] && src[2]) {
+      char hex[3] = {src[1], src[2], '\0'};
+      dst[di++] = (char)strtol(hex, NULL, 16);
+      src += 3;
+    } else if (*src == '+') {
+      dst[di++] = ' ';
+      src++;
+    } else {
+      dst[di++] = *src++;
+    }
+  }
+  dst[di] = '\0';
+}
+
+static bool form_get_field(const char *body, const char *key, char *dst,
+                           size_t dst_max) {
+  char search[72];
+  snprintf(search, sizeof(search), "%s=", key);
+  const char *p = strstr(body, search);
+
+  while (p) {
+    if (p == body || *(p - 1) == '&') {
+      break;
+    }
+    p = strstr(p + 1, search);
+  }
+
+  if (!p)
+    return false;
+  p += strlen(search);
+
+  char raw[1024] = {0};
+  size_t ri = 0;
+  while (*p && *p != '&' && ri < sizeof(raw) - 1) {
+    raw[ri++] = *p++;
+  }
+  raw[ri] = '\0';
+  url_decode(dst, raw, dst_max);
+  return true;
+}
+
+/* -----------------------------------------------------------------------
  * Handlers HTTP
  * ----------------------------------------------------------------------- */
 static esp_err_t get_root_handler(httpd_req_t *req) {
@@ -200,10 +248,13 @@ static esp_err_t get_root_handler(httpd_req_t *req) {
   snprintf(buf, 1024,
            "<label>Personalidade da IA</label><textarea name='personality' "
            "maxlength='255'>%s</textarea>"
+           "<label>Limiar de Audio (RMS) - Sugest&atilde;o: 1000.0</label>"
+           "<input name='rms_threshold' value='%.1f' type='number' step='0.1' "
+           "min='0' max='30000'>"
            "<hr style='border:1px solid #0f3460;margin:16px 0'>"
            "<p style='color:#e94560;margin:0 0 8px 0'><b>Perfis (Natureza, "
            "Prompt, Termos)</b></p>",
-           conf->ai_personality);
+           conf->ai_personality, conf->audio_rms_threshold);
   httpd_resp_sendstr_chunk(req, buf);
 
   // Part 3: Profiles
@@ -255,52 +306,6 @@ static esp_err_t get_root_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
-/* URL decode simples (application/x-www-form-urlencoded) */
-static void url_decode(char *dst, const char *src, size_t dst_max) {
-  size_t di = 0;
-  while (*src && di < dst_max - 1) {
-    if (*src == '%' && src[1] && src[2]) {
-      char hex[3] = {src[1], src[2], '\0'};
-      dst[di++] = (char)strtol(hex, NULL, 16);
-      src += 3;
-    } else if (*src == '+') {
-      dst[di++] = ' ';
-      src++;
-    } else {
-      dst[di++] = *src++;
-    }
-  }
-  dst[di] = '\0';
-}
-
-static bool form_get_field(const char *body, const char *key, char *dst,
-                           size_t dst_max) {
-  char search[72];
-  snprintf(search, sizeof(search), "%s=", key);
-  const char *p = strstr(body, search);
-
-  // More robust search: must be at the start of body or preceded by '&'
-  while (p) {
-    if (p == body || *(p - 1) == '&') {
-      break;
-    }
-    p = strstr(p + 1, search);
-  }
-
-  if (!p)
-    return false;
-  p += strlen(search);
-
-  char raw[1024] = {0};
-  size_t ri = 0;
-  while (*p && *p != '&' && ri < sizeof(raw) - 1) {
-    raw[ri++] = *p++;
-  }
-  raw[ri] = '\0';
-  url_decode(dst, raw, dst_max);
-  return true;
-}
-
 static esp_err_t post_save_handler(httpd_req_t *req) {
   if (req->content_len == 0 || req->content_len > 4096) {
     httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid content length");
@@ -327,6 +332,7 @@ static esp_err_t post_save_handler(httpd_req_t *req) {
   char personality[256] = {0};
   char base_url[128] = {0};
   char model[64] = {0};
+  char rms_str[16] = {0};
 
   char p_gen_name[32] = {0};
   char p_gen_prompt[512] = {0};
@@ -346,6 +352,10 @@ static esp_err_t post_save_handler(httpd_req_t *req) {
   form_get_field(body, "personality", personality, sizeof(personality));
   form_get_field(body, "base_url", base_url, sizeof(base_url));
   form_get_field(body, "model", model, sizeof(model));
+  form_get_field(body, "rms_threshold", rms_str, sizeof(rms_str));
+  float rms_val = (float)atof(rms_str);
+  if (rms_val < 0.001f)
+    rms_val = 1.0f; // Fallback to 1.0 if invalid/zero
 
   form_get_field(body, "gn", p_gen_name, sizeof(p_gen_name));
   form_get_field(body, "gp", p_gen_prompt, sizeof(p_gen_prompt));
@@ -361,18 +371,21 @@ static esp_err_t post_save_handler(httpd_req_t *req) {
 
   free(body);
 
-  if (strlen(ssid) == 0 || strlen(token) == 0) {
+  if (ssid[0] == '\0' || token[0] == '\0') {
     httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
                         "SSID e Token sao obrigatorios");
     return ESP_FAIL;
   }
 
-  ESP_LOGI(TAG, "POST /save => ssid='%s' token='%.8s...' url='%s' model='%s'",
-           ssid, token, base_url, model);
+  ESP_LOGI(
+      TAG,
+      "POST /save => ssid='%s' token='%.8s...' url='%s' model='%s' rms=%.1f",
+      ssid, token, base_url, model, rms_val);
 
   esp_err_t save_err = config_manager_update_and_save(
       ssid, pass, token, strlen(personality) > 0 ? personality : NULL,
-      strlen(base_url) > 0 ? base_url : NULL, strlen(model) > 0 ? model : NULL);
+      strlen(base_url) > 0 ? base_url : NULL, strlen(model) > 0 ? model : NULL,
+      rms_val);
 
   config_manager_update_profiles(strlen(p_gen_name) > 0 ? p_gen_name : NULL,
                                  strlen(p_gen_prompt) > 0 ? p_gen_prompt : NULL,
@@ -402,23 +415,19 @@ static esp_err_t post_save_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
-/* Responde com 200 OK vazio para URLs de captive portal detection.
- * iOS usa /hotspot-detect.html, Android usa /generate_204 e /gen_204 */
+/* Captive portal detection (iOS, Android, Windows) */
 static esp_err_t captive_detect_handler(httpd_req_t *req) {
-  /* Para /generate_204 e /gen_204: responder 204 */
   if (strstr(req->uri, "204")) {
     httpd_resp_set_status(req, "204 No Content");
     httpd_resp_send(req, NULL, 0);
     return ESP_OK;
   }
-  /* Para /hotspot-detect.html e outros: redirecionar ao portal */
   httpd_resp_set_status(req, "302 Found");
   httpd_resp_set_hdr(req, "Location", "http://" AP_IP "/");
   httpd_resp_send(req, NULL, 0);
   return ESP_OK;
 }
 
-/* Catch-all: redireciona qualquer outro path para o portal */
 static esp_err_t catch_all_handler(httpd_req_t *req) {
   httpd_resp_set_status(req, "302 Found");
   httpd_resp_set_hdr(req, "Location", "http://" AP_IP "/");
@@ -435,10 +444,7 @@ static httpd_handle_t start_http_server(void) {
   config.max_open_sockets = 7;
   config.uri_match_fn = httpd_uri_match_wildcard;
   config.stack_size = 8192;
-  config.max_uri_handlers = 10;
-  config.max_resp_headers = 10;
-  config.recv_wait_timeout = 10;
-  config.send_wait_timeout = 10;
+  config.max_uri_handlers = 12;
 
   httpd_handle_t server = NULL;
   if (httpd_start(&server, &config) != ESP_OK) {
@@ -446,57 +452,35 @@ static httpd_handle_t start_http_server(void) {
     return NULL;
   }
 
-  /* GET / — página principal */
   const httpd_uri_t root_uri = {
-      .uri = "/",
-      .method = HTTP_GET,
-      .handler = get_root_handler,
-  };
+      .uri = "/", .method = HTTP_GET, .handler = get_root_handler};
   httpd_register_uri_handler(server, &root_uri);
 
-  /* POST /save */
   const httpd_uri_t save_uri = {
-      .uri = "/save",
-      .method = HTTP_POST,
-      .handler = post_save_handler,
-  };
+      .uri = "/save", .method = HTTP_POST, .handler = post_save_handler};
   httpd_register_uri_handler(server, &save_uri);
 
-  /* Captive portal detection (iOS, Android, Windows) */
-  const httpd_uri_t detect_uri = {
-      .uri = "/generate_204",
-      .method = HTTP_GET,
-      .handler = captive_detect_handler,
-  };
+  const httpd_uri_t detect_uri = {.uri = "/generate_204",
+                                  .method = HTTP_GET,
+                                  .handler = captive_detect_handler};
   httpd_register_uri_handler(server, &detect_uri);
 
   const httpd_uri_t detect2_uri = {
-      .uri = "/gen_204",
-      .method = HTTP_GET,
-      .handler = captive_detect_handler,
-  };
+      .uri = "/gen_204", .method = HTTP_GET, .handler = captive_detect_handler};
   httpd_register_uri_handler(server, &detect2_uri);
 
-  const httpd_uri_t detect3_uri = {
-      .uri = "/hotspot-detect.html",
-      .method = HTTP_GET,
-      .handler = captive_detect_handler,
-  };
+  const httpd_uri_t detect3_uri = {.uri = "/hotspot-detect.html",
+                                   .method = HTTP_GET,
+                                   .handler = captive_detect_handler};
   httpd_register_uri_handler(server, &detect3_uri);
 
-  const httpd_uri_t detect4_uri = {
-      .uri = "/ncsi.txt",
-      .method = HTTP_GET,
-      .handler = captive_detect_handler,
-  };
+  const httpd_uri_t detect4_uri = {.uri = "/ncsi.txt",
+                                   .method = HTTP_GET,
+                                   .handler = captive_detect_handler};
   httpd_register_uri_handler(server, &detect4_uri);
 
-  /* Catch-all */
   const httpd_uri_t catchall_uri = {
-      .uri = "/*",
-      .method = HTTP_GET,
-      .handler = catch_all_handler,
-  };
+      .uri = "/*", .method = HTTP_GET, .handler = catch_all_handler};
   httpd_register_uri_handler(server, &catchall_uri);
 
   ESP_LOGI(TAG, "HTTP server started on port 80");
@@ -508,116 +492,46 @@ static httpd_handle_t start_http_server(void) {
  * ----------------------------------------------------------------------- */
 esp_err_t captive_portal_start(void) {
   ESP_LOGI(TAG, "=== Entering Configuration Mode (Captive Portal) ===");
-
   gui_set_response("Modo Config Web\nIniciando AP...");
 
-  /* ----------------------------------------------------------------
-   * 1. Para completamente o Wi-Fi STA antes de entrar em modo AP.
-   *    Isso evita que o reconnect handler do BSP interfira.
-   * ---------------------------------------------------------------- */
-  ESP_LOGI(TAG, "Stopping STA Wi-Fi...");
   esp_wifi_stop();
-  vTaskDelay(pdMS_TO_TICKS(800));
+  vTaskDelay(pdMS_TO_TICKS(500));
 
-  /* ----------------------------------------------------------------
-   * 2. Cria o netif para o AP (DHCP server + IP 192.168.4.1).
-   *    SEM isso o P4 não tem rota para 192.168.4.1 e nenhum cliente
-   *    recebe IP via DHCP → ERR_ADDRESS_UNREACHABLE.
-   * ---------------------------------------------------------------- */
   esp_netif_t *ap_netif = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
   if (!ap_netif) {
     ap_netif = esp_netif_create_default_wifi_ap();
-    if (!ap_netif) {
-      ESP_LOGE(TAG, "Failed to create AP netif");
-      return ESP_FAIL;
-    }
-    ESP_LOGI(TAG, "AP netif created (DHCP server will assign 192.168.4.x)");
-  } else {
-    ESP_LOGI(TAG, "AP netif already exists");
   }
 
-  /* ----------------------------------------------------------------
-   * 3. Configura e sobe SoftAP
-   * ---------------------------------------------------------------- */
-  esp_err_t err = esp_wifi_set_mode(WIFI_MODE_AP);
-  if (err != ESP_OK) {
-    ESP_LOGE(TAG, "set_mode(AP) failed: %s", esp_err_to_name(err));
-    return err;
-  }
-
+  esp_wifi_set_mode(WIFI_MODE_AP);
   wifi_config_t ap_cfg = {0};
   strlcpy((char *)ap_cfg.ap.ssid, AP_SSID, sizeof(ap_cfg.ap.ssid));
   ap_cfg.ap.ssid_len = (uint8_t)strlen(AP_SSID);
   ap_cfg.ap.channel = AP_CHANNEL;
   ap_cfg.ap.authmode = WIFI_AUTH_OPEN;
   ap_cfg.ap.max_connection = AP_MAX_CONN;
-  ap_cfg.ap.beacon_interval = 100;
 
-  err = esp_wifi_set_config(WIFI_IF_AP, &ap_cfg);
-  if (err != ESP_OK) {
-    ESP_LOGE(TAG, "set_config(AP) failed: %s", esp_err_to_name(err));
-    return err;
-  }
+  esp_wifi_set_config(WIFI_IF_AP, &ap_cfg);
+  esp_wifi_start();
 
-  err = esp_wifi_start();
-  if (err != ESP_OK && err != ESP_ERR_WIFI_CONN) {
-    ESP_LOGE(TAG, "wifi_start(AP) failed: %s", esp_err_to_name(err));
-    return err;
-  }
+  vTaskDelay(pdMS_TO_TICKS(1000));
+  gui_set_response("== Config Mode ==\nWi-Fi: " AP_SSID
+                   "\nAcesse: http://" AP_IP);
 
-  /* Aguarda AP e DHCP estabilizarem */
-  vTaskDelay(pdMS_TO_TICKS(1500));
-  ESP_LOGI(TAG, "SoftAP '%s' started (open, IP: %s)", AP_SSID, AP_IP);
-
-  /* ----------------------------------------------------------------
-   * 4. Atualiza display
-   * ---------------------------------------------------------------- */
-  gui_set_response("== Config Mode ==\n"
-                   "Wi-Fi: " AP_SSID "\n"
-                   "Acesse: http://" AP_IP "\n"
-                   "(Abra o browser)");
-
-  /* ----------------------------------------------------------------
-   * 5. DNS server (porta 53) — redireciona todos os hosts ao portal
-   * ---------------------------------------------------------------- */
   xTaskCreate(dns_server_task, "dns_srv", 4096, NULL, 5, NULL);
-  ESP_LOGI(TAG, "DNS server task created");
-
-  /* ----------------------------------------------------------------
-   * 6. HTTP server (porta 80)
-   * ---------------------------------------------------------------- */
   httpd_handle_t server = start_http_server();
-  if (!server) {
+  if (!server)
     return ESP_FAIL;
-  }
 
-  /* Aguarda configuração via browser ou cancelamento via botão físico */
-  ESP_LOGI(TAG, "Portal active at http://" AP_IP
-                " — waiting for config or button interrupt...");
-
-  // Consome o pressionamento inicial (o usuário segurou por 10s para entrar
-  // aqui) Só começa a monitorar a interrupção após o botão ser solto.
-  while (bsp_button_is_pressed()) {
+  while (bsp_button_is_pressed())
     vTaskDelay(pdMS_TO_TICKS(100));
-  }
 
   while (1) {
     vTaskDelay(pdMS_TO_TICKS(500));
-
     if (bsp_button_is_pressed()) {
-      ESP_LOGW(TAG,
-               "Configuration interrupted by user (physical button pressed)");
       gui_set_response("Cancelando...\nReiniciando...");
-      vTaskDelay(pdMS_TO_TICKS(1500));
+      vTaskDelay(pdMS_TO_TICKS(1000));
       esp_restart();
     }
-
-    static uint32_t s_log_tick = 0;
-    if (pdTICKS_TO_MS(xTaskGetTickCount() - s_log_tick) > 5000) {
-      ESP_LOGD(TAG, "Portal active, waiting (press button to cancel)...");
-      s_log_tick = xTaskGetTickCount();
-    }
   }
-
   return ESP_OK;
 }

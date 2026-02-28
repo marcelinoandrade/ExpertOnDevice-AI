@@ -4,7 +4,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "app_storage.h"
+#include "audio_utils.h"
 #include "cJSON.h"
+#include "config_manager.h"
 #include "driver/gpio.h"
 #include "esp_crt_bundle.h"
 #include "esp_heap_caps.h"
@@ -810,6 +813,8 @@ static esp_err_t app_do_interaction(void) {
   }
   app_set_state(APP_STATE_LISTENING);
   size_t captured_bytes = 0;
+  uint32_t total_blocks = 0;
+  uint32_t accepted_blocks = 0;
   const TickType_t capture_start = xTaskGetTickCount();
   uint32_t local_last_edge_ms = pdTICKS_TO_MS(xTaskGetTickCount());
 
@@ -857,7 +862,30 @@ static esp_err_t app_do_interaction(void) {
       free(audio_buffer);
       return capture_err;
     }
-    captured_bytes += chunk_bytes;
+
+    // RMS Filter logic
+    if (elapsed_ms < 200) {
+      // Blanking Window: ignore first 200ms
+      ESP_LOGD(TAG, "Blanking window: discarding %u bytes",
+               (unsigned)chunk_bytes);
+      continue;
+    }
+
+    float rms =
+        audio_calculate_rms((const int16_t *)(audio_buffer + captured_bytes),
+                            chunk_bytes / sizeof(int16_t));
+    total_blocks++;
+    if (rms >= config_manager_get()->audio_rms_threshold) {
+      accepted_blocks++;
+      captured_bytes += chunk_bytes;
+      ESP_LOGI(TAG, "[RMS] ACCEPT (%u/%u): %.2f >= %.2f",
+               (unsigned)accepted_blocks, (unsigned)total_blocks, rms,
+               config_manager_get()->audio_rms_threshold);
+    } else {
+      ESP_LOGI(TAG, "[RMS] REJECT (%u/%u): %.2f < %.2f",
+               (unsigned)accepted_blocks, (unsigned)total_blocks, rms,
+               config_manager_get()->audio_rms_threshold);
+    }
   }
 
   /* If capture was extremely short (e.g. just a quick click to dismiss screen),
@@ -920,6 +948,12 @@ static esp_err_t app_do_interaction(void) {
   ESP_LOGI(TAG, "interaction finished (captured=%u bytes, ms=%u)",
            (unsigned)captured_bytes,
            (unsigned)((captured_bytes * 1000U) / (16000U * 2U)));
+
+  if (total_blocks > 0) {
+    float percent = (float)accepted_blocks * 100.0f / (float)total_blocks;
+    ESP_LOGI(TAG, "[STATS] Blocks: Total=%u, Accepted=%u, Rate=%.1f%%",
+             (unsigned)total_blocks, (unsigned)accepted_blocks, percent);
+  }
   free(audio_buffer);
   return ESP_OK;
 }
