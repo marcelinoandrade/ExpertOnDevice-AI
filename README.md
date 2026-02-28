@@ -111,6 +111,9 @@ A arquitetura do firmware foi desenhada para suportar qualquer provedor via API 
 - ⚡ **Alta Robustez**: Gestão assíncrona com `FreeRTOS Queues` e uso otimizado de 8MB de `PSRAM`.
 - 💾 **Persistência Local**: Grava WAVs e logs de chat no SD Card (Opportunistic Saving).
 - 👕 **Ultra Portátil**: Ideal para assistentes de bolso, vestíveis ou crachás inteligentes.
+
+> 🌐 **Configuração Intuitiva**: O Captive Portal permite ajustar o Limiar de Áudio (RMS) e credenciais da IA sem cabos.
+> ![Captive Portal S3](imagens/Captive%20Portal.png)
  
 ---
  
