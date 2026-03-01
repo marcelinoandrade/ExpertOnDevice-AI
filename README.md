@@ -57,6 +57,8 @@ More than a simple "AI assistant", this is a **multimodal, configurable, and sov
 > **Current status:** The **ESP32-S3 Lite** firmware allows switching models dynamically via Web Portal. However, because it natively uses the OpenAI `input_audio` tag array format for maximum voice retention and speed, **true LLM-Agnosticism for voice currently requires C firmware recompilation** to adjust the JSON payload structure (or implementing a prior Whisper translation step). The ESP32-P4 Pro version follows the same standard of excellence but handles Computer Vision.
 >
 > 🗓️ **Roadmap / Future Work:** Make the firmware fully Payload-Agnostic directly via Captive Portal (translating hardware audio to any provider without recompilation).
+>
+> 💡 **The Architecture is Agnostic:** Our firmware features an agnostic HTTP-based architecture decoupled from proprietary SDKs, allowing rapid integration with any AI provider by modifying the open-source JSON payload. Currently, the ecosystem and Captive Portal *(No-Code / Plug and Play edition)* are formatted to prioritize OpenAI's multimodal audio endpoints.
 
 The firmware architecture was designed to support any provider via REST API. When implemented via code adjustments, you can simply edit `settings.json`:
 
