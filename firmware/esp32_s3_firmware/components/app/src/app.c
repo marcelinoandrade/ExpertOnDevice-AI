@@ -40,7 +40,6 @@
 #define APP_PREVIEW_REFRESH_MS 220
 #define APP_RESPONSE_TEXT_MAX 512
 #define APP_RESPONSE_SCROLL_STEP_PX 22
-#define APP_AI_MODEL_AUDIO_TEXT "gpt-4o-audio-preview"
 #define APP_HTTP_TIMEOUT_MS 45000
 #define APP_DEEP_SLEEP_TIMEOUT_MS 45000
 #define APP_DEEP_SLEEP_WARNING_MS 35000
@@ -733,10 +732,7 @@ static esp_err_t app_call_ai_with_audio(const uint8_t *wav_data, size_t wav_len,
            "Vocabulario tecnico relevante: %s.",
            app_profile_transcription_terms(s_expert_profile));
 
-  const char *audio_model =
-      (strcmp(config_manager_get()->ai_model, "gpt-4o") == 0)
-          ? APP_AI_MODEL_AUDIO_TEXT
-          : config_manager_get()->ai_model;
+  const char *audio_model = config_manager_get()->ai_model;
 
   esp_err_t err = app_call_ai_once(
       audio_model, audio_b64, app_profile_system_prompt(s_expert_profile),

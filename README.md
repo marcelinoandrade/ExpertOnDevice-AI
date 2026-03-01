@@ -54,9 +54,11 @@ More than a simple "AI assistant", this is a **multimodal, configurable, and sov
 
 ## 🔓 Open Architecture — LLM Agnostic
 
-> **Current status:** The **ESP32-S3 Lite** firmware is now the **most advanced** in the project, being 100% dynamically LLM-agnostic — you can switch providers (OpenAI, Anthropic, Groq, Ollama) via Web without recompiling! The ESP32-P4 Pro version follows the same standard of excellence.
+> **Current status:** The **ESP32-S3 Lite** firmware allows switching models dynamically via Web Portal. However, because it natively uses the OpenAI `input_audio` tag array format for maximum voice retention and speed, **true LLM-Agnosticism for voice currently requires C firmware recompilation** to adjust the JSON payload structure (or implementing a prior Whisper translation step). The ESP32-P4 Pro version follows the same standard of excellence but handles Computer Vision.
+>
+> 🗓️ **Roadmap / Future Work:** Make the firmware fully Payload-Agnostic directly via Captive Portal (translating hardware audio to any provider without recompilation).
 
-The firmware architecture was designed to support any provider via REST API. When implemented, you simply edit `settings.json`:
+The firmware architecture was designed to support any provider via REST API. When implemented via code adjustments, you can simply edit `settings.json`:
 
 ```json
 {
@@ -378,7 +380,7 @@ User → [Voice + Optional Photo]
 
 - [x] **Robust Push-to-Talk**: Starts on hardware falling edge and ends on rising edge deterministically. The last AI response actively persists on the display for the user.
 - [x] **Voice** mode (audio only) and **Photo+Voice** mode (camera + audio simultaneously).
-- [x] **Dynamic Base URL and Model**: Switch LLM providers via Captive Portal without plugging cables or recompiling firmware.
+- [x] **Dynamic Base URL and Model**: Switch LLM providers via Captive Portal without plugging cables or recompiling firmware (Note: As of today, dynamically swapping models for the specific payload of hardware audio requires adjusting the native JSON structure, making true Voice-Agnosticism a future roadmap).
 - [x] **Combined Expert Mode**: Integrate custom personalities via SD Card with hardware-selectable profiles.
 - [x] **Zero-Touch Captive Portal**: Quick Wi-Fi, AI Token, Model, and System Prompt configuration via Web Browser.
 - [x] **Event-Driven Architecture & Advanced PSRAM**: Intensive use of isolated Tasks (`FreeRTOS`), Mutex on SPI bus to protect local logging from GUI/SD slowdowns, and secure offline saving system (`Opportunistic Saving`).
