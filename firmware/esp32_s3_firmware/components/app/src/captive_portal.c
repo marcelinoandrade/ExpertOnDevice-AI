@@ -248,13 +248,10 @@ static esp_err_t get_root_handler(httpd_req_t *req) {
   snprintf(buf, 1024,
            "<label>Personalidade da IA</label><textarea name='personality' "
            "maxlength='255'>%s</textarea>"
-           "<label>Limiar de Audio (RMS) - Sugest&atilde;o: 1000.0</label>"
-           "<input name='rms_threshold' value='%.1f' type='number' step='0.1' "
-           "min='0' max='30000'>"
            "<hr style='border:1px solid #0f3460;margin:16px 0'>"
            "<p style='color:#e94560;margin:0 0 8px 0'><b>Perfis (Natureza, "
            "Prompt, Termos)</b></p>",
-           conf->ai_personality, conf->audio_rms_threshold);
+           conf->ai_personality);
   httpd_resp_sendstr_chunk(req, buf);
 
   // Part 3: Profiles
@@ -332,7 +329,6 @@ static esp_err_t post_save_handler(httpd_req_t *req) {
   char personality[256] = {0};
   char base_url[128] = {0};
   char model[64] = {0};
-  char rms_str[16] = {0};
 
   char p_gen_name[32] = {0};
   char p_gen_prompt[512] = {0};
@@ -352,10 +348,6 @@ static esp_err_t post_save_handler(httpd_req_t *req) {
   form_get_field(body, "personality", personality, sizeof(personality));
   form_get_field(body, "base_url", base_url, sizeof(base_url));
   form_get_field(body, "model", model, sizeof(model));
-  form_get_field(body, "rms_threshold", rms_str, sizeof(rms_str));
-  float rms_val = (float)atof(rms_str);
-  if (rms_val < 0.001f)
-    rms_val = 1.0f; // Fallback to 1.0 if invalid/zero
 
   form_get_field(body, "gn", p_gen_name, sizeof(p_gen_name));
   form_get_field(body, "gp", p_gen_prompt, sizeof(p_gen_prompt));
@@ -377,15 +369,12 @@ static esp_err_t post_save_handler(httpd_req_t *req) {
     return ESP_FAIL;
   }
 
-  ESP_LOGI(
-      TAG,
-      "POST /save => ssid='%s' token='%.8s...' url='%s' model='%s' rms=%.1f",
-      ssid, token, base_url, model, rms_val);
+  ESP_LOGI(TAG, "POST /save => ssid='%s' token='%.8s...' url='%s' model='%s'",
+           ssid, token, base_url, model);
 
   esp_err_t save_err = config_manager_update_and_save(
       ssid, pass, token, strlen(personality) > 0 ? personality : NULL,
-      strlen(base_url) > 0 ? base_url : NULL, strlen(model) > 0 ? model : NULL,
-      rms_val);
+      strlen(base_url) > 0 ? base_url : NULL, strlen(model) > 0 ? model : NULL);
 
   config_manager_update_profiles(strlen(p_gen_name) > 0 ? p_gen_name : NULL,
                                  strlen(p_gen_prompt) > 0 ? p_gen_prompt : NULL,

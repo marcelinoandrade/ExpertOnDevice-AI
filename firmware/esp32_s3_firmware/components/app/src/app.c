@@ -64,6 +64,7 @@ static QueueHandle_t s_app_queue;
 static app_state_t s_state = APP_STATE_BOOTING;
 static bool s_prev_button_state = false;
 static uint32_t s_last_click_ms = 0;
+static uint32_t s_last_interaction_end_ms = 0;
 static uint32_t s_config_longpress_start;
 static bool s_config_longpress_active;
 
@@ -813,8 +814,6 @@ static esp_err_t app_do_interaction(void) {
   }
   app_set_state(APP_STATE_LISTENING);
   size_t captured_bytes = 0;
-  uint32_t total_blocks = 0;
-  uint32_t accepted_blocks = 0;
   const TickType_t capture_start = xTaskGetTickCount();
   uint32_t local_last_edge_ms = pdTICKS_TO_MS(xTaskGetTickCount());
 
@@ -834,7 +833,8 @@ static esp_err_t app_do_interaction(void) {
       uint32_t now = pdTICKS_TO_MS(xTaskGetTickCount());
       if (now - local_last_edge_ms > 50) { // Slight debounce on release
         ESP_LOGI(TAG, "Button released -> stopping recording");
-        s_prev_button_state = true; // Sync with outer loop
+        s_prev_button_state =
+            false; // PHYSICAL RELEASE IS COMING, sync with app_task loop
         s_last_click_ms = now;
         break;
       }
@@ -863,34 +863,17 @@ static esp_err_t app_do_interaction(void) {
       return capture_err;
     }
 
-    // RMS Filter logic
-    if (elapsed_ms < 200) {
-      // Blanking Window: ignore first 200ms
-      ESP_LOGD(TAG, "Blanking window: discarding %u bytes",
-               (unsigned)chunk_bytes);
-      continue;
-    }
-
     float rms =
         audio_calculate_rms((const int16_t *)(audio_buffer + captured_bytes),
                             chunk_bytes / sizeof(int16_t));
-    total_blocks++;
-    if (rms >= config_manager_get()->audio_rms_threshold) {
-      accepted_blocks++;
-      captured_bytes += chunk_bytes;
-      ESP_LOGI(TAG, "[RMS] ACCEPT (%u/%u): %.2f >= %.2f",
-               (unsigned)accepted_blocks, (unsigned)total_blocks, rms,
-               config_manager_get()->audio_rms_threshold);
-    } else {
-      ESP_LOGI(TAG, "[RMS] REJECT (%u/%u): %.2f < %.2f",
-               (unsigned)accepted_blocks, (unsigned)total_blocks, rms,
-               config_manager_get()->audio_rms_threshold);
-    }
+    captured_bytes += chunk_bytes;
+    ESP_LOGI(TAG, "[RMS] Window: %.2f (Total: %u bytes)", rms,
+             (unsigned)captured_bytes);
   }
 
   /* If capture was extremely short (e.g. just a quick click to dismiss screen),
-   * silently cancel. */
-  if (captured_bytes < 16000) { /* 16000 bytes = 0.5s of 16k 16-bit mono */
+   * silently cancel. (Lower threshold to 100ms / 3200 bytes) */
+  if (captured_bytes < 3200) {
     app_set_state(APP_STATE_IDLE);
     gui_set_response(s_last_response);
     free(audio_buffer);
@@ -903,6 +886,12 @@ static esp_err_t app_do_interaction(void) {
     free(audio_buffer);
     return ESP_OK;
   }
+
+  /* High-pass filter: remove low-freq noise to improve speech clarity */
+  const size_t sample_count = captured_bytes / sizeof(int16_t);
+  audio_apply_highpass((int16_t *)audio_buffer, sample_count, 100.0f, 16000.0f);
+  ESP_LOGI(TAG, "HPF applied: 100 Hz cutoff, %u samples",
+           (unsigned)sample_count);
 
   app_set_state(APP_STATE_THINKING);
 
@@ -943,17 +932,13 @@ static esp_err_t app_do_interaction(void) {
   }
 
   app_storage_notify_interaction();
+  s_last_interaction_end_ms = pdTICKS_TO_MS(xTaskGetTickCount());
   app_set_state(APP_STATE_SHOWING_RESPONSE);
 
   ESP_LOGI(TAG, "interaction finished (captured=%u bytes, ms=%u)",
            (unsigned)captured_bytes,
            (unsigned)((captured_bytes * 1000U) / (16000U * 2U)));
 
-  if (total_blocks > 0) {
-    float percent = (float)accepted_blocks * 100.0f / (float)total_blocks;
-    ESP_LOGI(TAG, "[STATS] Blocks: Total=%u, Accepted=%u, Rate=%.1f%%",
-             (unsigned)total_blocks, (unsigned)accepted_blocks, percent);
-  }
   free(audio_buffer);
   return ESP_OK;
 }
@@ -1062,7 +1047,9 @@ static void app_task(void *arg) {
 
     if (is_edge) {
       uint32_t now = pdTICKS_TO_MS(xTaskGetTickCount());
-      if (now - s_last_click_ms > 100) { // Debounce press
+      // Interaction lockout (1000ms) + Press debounce (150ms)
+      if ((now - s_last_interaction_end_ms > 1000) &&
+          (now - s_last_click_ms > 150)) {
         s_last_click_ms = now;
         if (s_state == APP_STATE_IDLE || s_state == APP_STATE_ERROR ||
             s_state == APP_STATE_SHOWING_RESPONSE) {

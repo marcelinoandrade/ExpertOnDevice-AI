@@ -56,9 +56,6 @@ typedef struct {
   uint8_t volume;     /* 0–100 */
   uint8_t brightness; /* 0–100 */
 
-  /* Audio/VAD */
-  float audio_rms_threshold;
-
   /* Estado interno */
   bool loaded; /* true se o arquivo foi lido com sucesso */
 } app_config_t;
@@ -107,8 +104,7 @@ esp_err_t config_manager_update_and_save(const char *ssid, const char *pass,
                                          const char *ai_token,
                                          const char *ai_personality,
                                          const char *ai_base_url,
-                                         const char *ai_model,
-                                         float audio_rms_threshold);
+                                         const char *ai_model);
 
 /**
  * @brief Atualiza os perfis especialistas na memória e salva.
