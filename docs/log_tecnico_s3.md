@@ -1,29 +1,29 @@
-# 🛠️ Logs Técnicos — ESP32 AI Assistant (S3 Lite)
+# 🛠️ Technical Logs — ESP32 AI Assistant (S3 Lite)
 
-> **Status do Sistema: ✅ Operacional (Captura Direta + Monitoramento RMS)**  
-> **Data do Log: 01 de Março de 2026**  
+> **System Status: ✅ Operational (Direct Capture + RMS Monitoring)**  
+> **Log Date: March 01, 2026**  
 > **Hardware: ESP32-S3 | Firmware: ESP-IDF v5.5.1**
 
 ---
 
-## 🚀 Métricas de Performance Medidas
+## 🚀 Measured Performance Metrics
 
-| Métrica | Valor | Notas |
+| Metric | Value | Notes |
 |---|---|---|
-| ⏱️ Boot completo do sistema | **~1,5 s** | Da CPU start até prompt livre |
-| 🧠 PSRAM disponível | **8 MB** | AP Octal PSRAM 64Mbit, 80MHz |
-| 🎙️ Janela de captura | **100 ms** | 3.200 bytes por janela (16kHz, 16-bit, mono) |
-| 🎙️ RMS por janela | **Informativo** | Monitoramento via Serial, sem filtragem |
-| � Filtro Passa-Altas (HPF) | **100 Hz** | IIR Butterworth 1ª ordem, latência: 1 amostra |
-| �💾 Gravação WAV no SD | **< 200 ms** | Bulk save via SPI |
-| 💬 Append do log de chat | **< 10 ms** | Arquivo CMMDD.txt salvo junto ao áudio |
-| 💤 Deep Sleep Timeout | **45 s** | Inatividade, c/ aviso aos 35s |
-| ⚡ Consumo em Standby | **< µA** | Deep Sleep Ext1 (Acorda no Botão) |
-| 🔋 Leitura de Bateria (ADC) | **~O(1)** | Leitura via ADC_UNIT_1 (GPIO 4) |
+| ⏱️ Full system boot | **~1.5 s** | From CPU start to free prompt |
+| 🧠 Available PSRAM | **8 MB** | AP Octal PSRAM 64Mbit, 80MHz |
+| 🎙️ Capture window | **100 ms** | 3,200 bytes per window (16kHz, 16-bit, mono) |
+| 🎙️ RMS per window | **Informational** | Serial monitoring, no filtering |
+| 🔊 High-Pass Filter (HPF) | **100 Hz** | IIR Butterworth 1st order, latency: 1 sample |
+| 💾 WAV recording to SD | **< 200 ms** | Bulk save via SPI |
+| 💬 Chat log append | **< 10 ms** | CMMDD.txt file saved alongside audio |
+| 💤 Deep Sleep Timeout | **45 s** | Inactivity, with warning at 35s |
+| ⚡ Standby consumption | **< µA** | Deep Sleep Ext1 (Wake on Button) |
+| 🔋 Battery Reading (ADC) | **~O(1)** | Reading via ADC_UNIT_1 (GPIO 4) |
 
 ---
 
-## 📋 Sequência de Boot Anotada
+## 📋 Annotated Boot Sequence
 
 ```
 I (415) esp_psram: Found 8MB PSRAM device
@@ -38,13 +38,13 @@ I (1627) app: Dynamic config loaded from SD card
 I (1627) main: assistant_esp32 started
 ```
 
-**Tempo total de boot: ~1,5 segundos.** O sistema inicializa sem calibrações adicionais, ficando instantaneamente disponível para interação via botão.
+**Total boot time: ~1.5 seconds.** The system initializes without additional calibrations, becoming instantly available for button interaction.
 
 ---
 
-## 🎙️ Fluxo de Interação — Captura Direta com Monitoramento RMS
+## 🎙️ Interaction Flow — Direct Capture with RMS Monitoring
 
-O sistema utiliza **Push-to-Talk (PTT)** como controle exclusivo da gravação. Todos os chunks de áudio são capturados integralmente — o RMS de cada janela de 100ms é calculado e exibido no log serial para monitoramento. Após a captura, um **Filtro Passa-Altas (HPF) de 100 Hz** é aplicado in-place no buffer PCM para remover ruídos de baixa frequência antes do envio à IA.
+The system uses **Push-to-Talk (PTT)** as the exclusive recording control. All audio chunks are captured in their entirety — the RMS of each 100ms window is calculated and displayed in the serial log for monitoring. After capture, a **100 Hz High-Pass Filter (HPF)** is applied in-place on the PCM buffer to remove low-frequency noise before sending to the AI.
 
 ```
 I (6637) app: button pressed -> start recording
@@ -61,14 +61,14 @@ I (13917) app_storage: Audio queued in PSRAM (108800 bytes, queue: 1/2)
 I (13957) app: interaction finished (captured=108800 bytes, ms=3400)
 ```
 
-**Observações:**
-- **Captura integral**: Todo o áudio é mantido (silêncio + fala). A decisão fica a cargo do modelo de IA.
-- **Monitoramento RMS**: Valores típicos: silêncio ~300-600, fala ~1500-7000, picos de voz alta ~12000-27000.
-- **HPF**: Aplicado após captura completa, antes da conversão WAV — tempo de processamento desprezível.
+**Observations:**
+- **Full capture**: All audio is retained (silence + speech). The decision is left to the AI model.
+- **RMS Monitoring**: Typical values: silence ~300-600, speech ~1500-7000, loud voice peaks ~12000-27000.
+- **HPF**: Applied after complete capture, before WAV conversion — negligible processing time.
 
 ---
 
-## 💾 Subsistema de Armazenamento (Opportunistic Saving)
+## 💾 Storage Subsystem (Opportunistic Saving)
 
 ```
 I (11967) app_storage: Audio queued in PSRAM (73600 bytes, queue: 1/2)
@@ -78,13 +78,13 @@ I (12477) app_storage: Audio saved: /sdcard/media/audio/R120102.WAV (73600 bytes
 I (12487) app_storage: Batch save complete (SD kept mounted): 1 saved, 0 failed
 ```
 
-**Observações:**
-- **Estabilidade**: O sistema monitora a fila de PSRAM e descarrega preventivamente quando atinge o limiar de segurança.
-- **DMA Check**: Realiza verificação de memória interna livre antes de iniciar operações pesadas no SD.
+**Observations:**
+- **Stability**: The system monitors the PSRAM queue and preemptively offloads when the safety threshold is reached.
+- **DMA Check**: Performs a free internal memory check before starting heavy SD operations.
 
 ---
 
-## 💤 Gerenciamento de Baixo Consumo (Deep Sleep)
+## 💤 Low-Power Management (Deep Sleep)
 
 ```
 I (36597) app: Deep sleep warning: 10s remaining
@@ -94,13 +94,13 @@ I (48097) bsp_sd: SD card unmounted
 W (48117) bsp_sleep: Button is already LOW (pressed?). Waiting for release...
 ```
 
-**Observações:**
-- **Safe Shutdown**: O cartão SD é desmontado com segurança antes da suspensão.
-- **Hardware Trigger**: O sistema aguarda a liberação do GPIO 18 (botão) para evitar bootloops infinitos.
+**Observations:**
+- **Safe Shutdown**: The SD card is safely unmounted before suspension.
+- **Hardware Trigger**: The system waits for GPIO 18 (button) release to avoid infinite bootloops.
 
 ---
 
-## 🌐 Captive Portal — Ativação por Double-Hold
+## 🌐 Captive Portal — Double-Hold Activation
 
 ```
 W (27947) app: Config portal triggered by double-hold!
@@ -110,54 +110,54 @@ I (29537) captive_portal: DNS server task started (port 53)
 I (29537) captive_portal: HTTP server started on port 80
 ```
 
-**Observações:**
-- **Acessibilidade**: Portal disponível em `192.168.4.1` com redirecionamento DNS automático.
-- **Configuração**: Permite ajuste de Wi-Fi, personalidade da IA, modelo, URL base e perfis de especialista.
+**Observations:**
+- **Accessibility**: Portal available at `192.168.4.1` with automatic DNS redirect.
+- **Configuration**: Allows adjustment of Wi-Fi, AI personality, model, base URL, and expert profiles.
 
 ---
 
-## 🔊 Filtro Passa-Altas (HPF) — Melhoria de Inteligibilidade
+## 🔊 High-Pass Filter (HPF) — Intelligibility Improvement
 
-Implementado filtro digital IIR Butterworth de 1ª ordem com frequência de corte em **100 Hz**, aplicado in-place no buffer PCM após a captura completa e antes da conversão WAV.
+A 1st-order IIR Butterworth digital filter with a cutoff frequency of **100 Hz** was implemented, applied in-place on the PCM buffer after complete capture and before WAV conversion.
 
-| Parâmetro | Valor |
+| Parameter | Value |
 |---|---|
-| Tipo | IIR Butterworth 1ª ordem |
-| Frequência de corte | 100 Hz |
-| Rolloff | -6 dB/oitava |
-| Latência | 1 amostra (62,5 µs a 16 kHz) |
-| Custo computacional | ~2 mult + 2 add por amostra |
-| Alocação extra | Nenhuma (processamento in-place) |
+| Type | 1st-order IIR Butterworth |
+| Cutoff frequency | 100 Hz |
+| Rolloff | -6 dB/octave |
+| Latency | 1 sample (62.5 µs at 16 kHz) |
+| Computational cost | ~2 mult + 2 add per sample |
+| Extra allocation | None (in-place processing) |
 
-**Justificativa técnica:**
-- Remove hum elétrico (50/60 Hz + harmônicos), rumble do microfone MEMS e vibrações mecânicas.
-- A fundamental mais grave da voz masculina (~85 Hz) sofre atenuação mínima (-6 dB/oitava de rolloff suave).
-- Formantes essenciais para inteligibilidade estão acima de 300 Hz — totalmente preservados.
-- Padrão compatível com APIs de STT (Whisper, GPT-4o Audio).
+**Technical justification:**
+- Removes electrical hum (50/60 Hz + harmonics), MEMS microphone rumble, and mechanical vibrations.
+- The lowest male voice fundamental (~85 Hz) suffers minimal attenuation (-6 dB/octave gentle rolloff).
+- Essential formants for intelligibility are above 300 Hz — fully preserved.
+- Compatible with STT APIs standard (Whisper, GPT-4o Audio).
 
-**Resultado**: IA avaliou qualidade do áudio em **7-8/10** — satisfatório para transcrição e resposta contextual.
-
----
-
-## 🔋 Telemetria e Monitoramento de Bateria
-
-O S3 Lite realiza leitura contínua via ADC_UNIT_1:
-- **Pino**: GPIO 4
-- **Calibração**: Uso de curva de calibração nativa do chip via BSP.
-- **Status UI**: Atualização em tempo real na Status Bar do visor LVGL via barramento SPI.
+**Result**: AI rated audio quality at **7-8/10** — satisfactory for transcription and contextual response.
 
 ---
 
-## ✅ Conclusão Operacional
+## 🔋 Battery Telemetry and Monitoring
 
-O firmware do S3 Lite demonstrou:
-- ✅ **Boot instantâneo** (~1,5s) sem calibrações adicionais.
-- ✅ **Captura de áudio direta** com monitoramento RMS informativo por janela.
-- ✅ **Filtro HPF 100 Hz** — IIR Butterworth sem atraso, melhoria mensurável na inteligibilidade (7-8/10).
-- ✅ **Push-to-Talk robusto** com lockout de 1s e debounce de 150ms.
-- ✅ **Persistência confiável** com salvamento preventivo no SD Card.
-- ✅ **Gestão de Energia eficiente** com shutdown seguro do FileSystem.
+The S3 Lite performs continuous reading via ADC_UNIT_1:
+- **Pin**: GPIO 4
+- **Calibration**: Uses the chip's native calibration curve via BSP.
+- **UI Status**: Real-time update on the LVGL display Status Bar via SPI bus.
 
 ---
 
-*Log coletado via `idf.py monitor` em 01/03/2026.*
+## ✅ Operational Conclusion
+
+The S3 Lite firmware demonstrated:
+- ✅ **Instant boot** (~1.5s) without additional calibrations.
+- ✅ **Direct audio capture** with informational per-window RMS monitoring.
+- ✅ **100 Hz HPF** — IIR Butterworth with zero delay, measurable intelligibility improvement (7-8/10).
+- ✅ **Robust Push-to-Talk** with 1s lockout and 150ms debounce.
+- ✅ **Reliable persistence** with preemptive SD Card saving.
+- ✅ **Efficient power management** with safe FileSystem shutdown.
+
+---
+
+*Log collected via `idf.py monitor` on 03/01/2026.*
