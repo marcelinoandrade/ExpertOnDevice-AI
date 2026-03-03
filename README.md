@@ -61,7 +61,7 @@ The firmware uses the **OpenAI Chat Completions API with `input_audio`** as its 
 | Provider | Example Model | Status |
 |---|---|---|
 | **OpenAI** | `gpt-4o-audio-preview` | ✅ Tested & validated |
-| **OpenAI** | `gpt-4o-mini-audio-preview` | 🔬 Architecturally compatible, not yet tested |
+| **OpenAI** | `gpt-4o-mini-audio-preview` | ✅ Tested & validated  |
 | **Groq** | `whisper-large-v3-turbo` | 🔬 Architecturally compatible, not yet tested |
 | **Ollama (local)** | `qwen2.5-audio` | 🔬 Architecturally compatible, not yet tested |
 | **vLLM / LiteLLM** | any compatible | 🔬 Architecturally compatible, not yet tested |
