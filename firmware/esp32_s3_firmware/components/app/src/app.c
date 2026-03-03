@@ -25,7 +25,6 @@
 #include "captive_portal.h"
 #include "config_manager.h"
 #include "gui.h"
-#include "secret.h"
 
 #define APP_TASK_STACK_SIZE (10 * 1024)
 #define APP_TASK_PRIORITY 5
@@ -66,6 +65,10 @@ static uint32_t s_last_click_ms = 0;
 static uint32_t s_last_interaction_end_ms = 0;
 static uint32_t s_config_longpress_start;
 static bool s_config_longpress_active;
+
+/* Persistent HTTP client — reused across interactions to avoid TLS handshake */
+static esp_http_client_handle_t s_http_client = NULL;
+static char s_http_client_url[512] = {0};
 
 static app_expert_profile_t s_expert_profile = APP_EXPERT_PROFILE_GENERAL;
 static char s_last_response[APP_RESPONSE_TEXT_MAX] =
@@ -135,12 +138,6 @@ static void app_gui_event_cb(gui_event_type_t event) {
 /* Long-press config portal: btn2 + btn3 simultaneos por 10 s */
 #define APP_CONFIG_PORTAL_LONGPRESS_MS 10000
 
-typedef struct {
-  char *data;
-  size_t len;
-  size_t cap;
-} app_http_response_t;
-
 static uint8_t *app_pcm16_to_wav(const uint8_t *pcm, size_t pcm_len,
                                  uint32_t sample_rate_hz, uint16_t channels,
                                  uint16_t bits_per_sample, size_t *wav_len) {
@@ -200,32 +197,6 @@ static char *app_base64_encode(const uint8_t *data, size_t data_len) {
   }
   out[out_len] = '\0';
   return out;
-}
-
-static esp_err_t app_http_append(app_http_response_t *resp, const char *data,
-                                 int len) {
-  if (!resp || !data || len <= 0) {
-    return ESP_OK;
-  }
-
-  const size_t required = resp->len + (size_t)len + 1;
-  if (required > resp->cap) {
-    size_t new_cap = (resp->cap == 0) ? 1024 : resp->cap * 2;
-    while (new_cap < required) {
-      new_cap *= 2;
-    }
-    char *new_data = realloc(resp->data, new_cap);
-    if (!new_data) {
-      return ESP_ERR_NO_MEM;
-    }
-    resp->data = new_data;
-    resp->cap = new_cap;
-  }
-
-  memcpy(resp->data + resp->len, data, (size_t)len);
-  resp->len += (size_t)len;
-  resp->data[resp->len] = '\0';
-  return ESP_OK;
 }
 
 static void app_utf8_to_ascii(char *text) {
@@ -346,116 +317,6 @@ static void app_utf8_to_ascii(char *text) {
   *dst = '\0';
 }
 
-static esp_err_t app_extract_response_text(const char *json, char *out_text,
-                                           size_t out_text_len) {
-  if (!json || !out_text || out_text_len == 0) {
-    return ESP_ERR_INVALID_ARG;
-  }
-
-  cJSON *root = cJSON_Parse(json);
-  if (!root) {
-    return ESP_FAIL;
-  }
-
-  const cJSON *choices = cJSON_GetObjectItemCaseSensitive(root, "choices");
-  if (cJSON_IsArray(choices)) {
-    cJSON *first_choice = cJSON_GetArrayItem(choices, 0);
-    cJSON *message = cJSON_GetObjectItemCaseSensitive(first_choice, "message");
-    cJSON *content = cJSON_GetObjectItemCaseSensitive(message, "content");
-    cJSON *audio = cJSON_GetObjectItemCaseSensitive(message, "audio");
-
-    // Format 1: gpt-4o audio responses put text in message.audio.transcript
-    if (audio) {
-      cJSON *transcript = cJSON_GetObjectItemCaseSensitive(audio, "transcript");
-      if (cJSON_IsString(transcript) && transcript->valuestring) {
-        strlcpy(out_text, transcript->valuestring, out_text_len);
-        cJSON_Delete(root);
-        return ESP_OK;
-      }
-    }
-
-    // Format 2: Standard text in message.content
-    if (cJSON_IsString(content) && content->valuestring) {
-      strlcpy(out_text, content->valuestring, out_text_len);
-
-      // Clean up enclosed JSON wrappers if model hallucinated a data structure
-      if (out_text[0] == '{' || out_text[0] == '[') {
-        cJSON *inner = cJSON_Parse(out_text);
-
-        // Handle single-quote 'Python-style' dictionaries by replacing with "
-        if (!inner && out_text[0] == '{') {
-          char *tmp = strdup(out_text);
-          if (tmp) {
-            for (int i = 0; tmp[i]; i++)
-              if (tmp[i] == '\'')
-                tmp[i] = '\"';
-            inner = cJSON_Parse(tmp);
-            free(tmp);
-          }
-        }
-
-        if (inner) {
-          cJSON *inner_text = cJSON_GetObjectItemCaseSensitive(inner, "text");
-          if (!inner_text)
-            inner_text = cJSON_GetObjectItemCaseSensitive(inner, "response");
-
-          if (cJSON_IsString(inner_text) && inner_text->valuestring) {
-            strlcpy(out_text, inner_text->valuestring, out_text_len);
-          } else if (cJSON_IsObject(inner)) {
-            // Robust formatting: extract all keys if no specific text field
-            // found e.g. {"key": "value"} -> "key: value"
-            char *formatted = (char *)calloc(1, out_text_len);
-            if (formatted) {
-              cJSON *item = NULL;
-              cJSON_ArrayForEach(item, inner) {
-                if (item->string && cJSON_IsString(item) && item->valuestring) {
-                  char line[128];
-                  snprintf(line, sizeof(line), "%s: %s\n", item->string,
-                           item->valuestring);
-                  strlcat(formatted, line, out_text_len);
-                }
-              }
-              if (formatted[0] != '\0')
-                strlcpy(out_text, formatted, out_text_len);
-              free(formatted);
-            }
-          }
-          cJSON_Delete(inner);
-        }
-      }
-      cJSON_Delete(root);
-      return ESP_OK;
-    }
-
-    // Format 3: Array format in content (e.g. Anthropic-like mapped to OpenAI)
-    if (cJSON_IsArray(content)) {
-      cJSON *part = NULL;
-      cJSON_ArrayForEach(part, content) {
-        cJSON *text = cJSON_GetObjectItemCaseSensitive(part, "text");
-        if (cJSON_IsString(text) && text->valuestring) {
-          strlcpy(out_text, text->valuestring, out_text_len);
-          cJSON_Delete(root);
-          return ESP_OK;
-        }
-      }
-    }
-  } else {
-    // Fallback for non-OpenAI standard endpoints returning flat {"response":
-    // "..."}
-    cJSON *response_field = cJSON_GetObjectItemCaseSensitive(root, "response");
-    if (!response_field)
-      response_field = cJSON_GetObjectItemCaseSensitive(root, "text");
-    if (cJSON_IsString(response_field) && response_field->valuestring) {
-      strlcpy(out_text, response_field->valuestring, out_text_len);
-      cJSON_Delete(root);
-      return ESP_OK;
-    }
-  }
-
-  cJSON_Delete(root);
-  return ESP_ERR_NOT_FOUND;
-}
-
 static void app_set_state(app_state_t state);
 
 static const char *app_profile_system_prompt(app_expert_profile_t profile) {
@@ -499,6 +360,7 @@ static esp_err_t app_build_ai_request_json(
   }
 
   cJSON_AddStringToObject(root, "model", model);
+  cJSON_AddBoolToObject(root, "stream", true);
   cJSON_AddItemToObject(root, "messages", messages);
 
   cJSON *system_msg = cJSON_CreateObject();
@@ -583,77 +445,221 @@ static esp_err_t app_build_ai_request_json(
   return ESP_OK;
 }
 
-/* app_check_dns_ready has been removed because DNS pre-check is skipped
- * for arbitrary dynamic endpoints, the HTTP client will fail gracefully
- * if the host does not exist or network is unavailable. */
+/* -----------------------------------------------------------------------
+ * Persistent HTTP client management
+ * ----------------------------------------------------------------------- */
 
-// Network status log removed to fix -Werror
-
-static esp_err_t app_http_post_json(const char *request_json,
-                                    app_http_response_t *resp, int *http_code) {
-  if (!request_json || !resp || !http_code) {
-    return ESP_ERR_INVALID_ARG;
+static void app_http_client_invalidate(void) {
+  if (s_http_client) {
+    esp_http_client_cleanup(s_http_client);
+    s_http_client = NULL;
   }
+  s_http_client_url[0] = '\0';
+}
 
-  *http_code = 0;
-  resp->data = NULL;
-  resp->len = 0;
-  resp->cap = 0;
-
-  esp_http_client_config_t config = {
-      .url = config_manager_get()->ai_base_url,
+static esp_err_t app_http_client_ensure(void) {
+  const char *url = config_manager_get()->ai_base_url;
+  if (s_http_client && strcmp(s_http_client_url, url) == 0) {
+    return ESP_OK; /* already valid and URL unchanged */
+  }
+  app_http_client_invalidate();
+  esp_http_client_config_t cfg = {
+      .url = url,
       .timeout_ms = APP_HTTP_TIMEOUT_MS,
       .crt_bundle_attach = esp_crt_bundle_attach,
+      .keep_alive_enable = true,
+      .keep_alive_idle = 5,
+      .keep_alive_interval = 5,
+      .keep_alive_count = 3,
   };
-  esp_http_client_handle_t client = esp_http_client_init(&config);
-  if (!client) {
+  s_http_client = esp_http_client_init(&cfg);
+  if (!s_http_client) {
     return ESP_FAIL;
   }
+  strlcpy(s_http_client_url, url, sizeof(s_http_client_url));
+  ESP_LOGI(TAG, "HTTP client initialized: %s", url);
+  return ESP_OK;
+}
 
-  char auth_header[256];
-  snprintf(auth_header, sizeof(auth_header), "Bearer %s",
-           SECRET_OPENAI_API_KEY);
-  esp_http_client_set_method(client, HTTP_METHOD_POST);
-  esp_http_client_set_header(client, "Authorization", auth_header);
-  esp_http_client_set_header(client, "Content-Type", "application/json");
-  esp_http_client_set_post_field(client, request_json,
-                                 (int)strlen(request_json));
+/* -----------------------------------------------------------------------
+ * SSE streaming parser
+ * ----------------------------------------------------------------------- */
 
-  esp_err_t err = esp_http_client_open(client, strlen(request_json));
+#define APP_SSE_LINE_BUF 4096
+
+typedef struct {
+  char text[APP_RESPONSE_TEXT_MAX]; /* accumulated response text */
+  size_t text_len;
+  char line_buf[APP_SSE_LINE_BUF]; /* current SSE line assembly buffer */
+  size_t line_buf_pos;
+  bool done;                /* [DONE] received */
+  TickType_t last_gui_tick; /* rate-limit GUI updates */
+} app_sse_ctx_t;
+
+static void app_sse_on_data(app_sse_ctx_t *ctx, const char *data) {
+  if (strcmp(data, "[DONE]") == 0) {
+    ctx->done = true;
+    return;
+  }
+
+  cJSON *chunk = cJSON_Parse(data);
+  if (!chunk) {
+    return;
+  }
+
+  const char *frag = NULL;
+  cJSON *choices = cJSON_GetObjectItemCaseSensitive(chunk, "choices");
+  if (cJSON_IsArray(choices)) {
+    cJSON *c0 = cJSON_GetArrayItem(choices, 0);
+    cJSON *delta = cJSON_GetObjectItemCaseSensitive(c0, "delta");
+    if (delta) {
+      /* Standard text models: delta.content */
+      cJSON *content = cJSON_GetObjectItemCaseSensitive(delta, "content");
+      if (cJSON_IsString(content) && content->valuestring &&
+          content->valuestring[0]) {
+        frag = content->valuestring;
+      } else {
+        /* gpt-4o-audio-preview: delta.audio.transcript */
+        cJSON *audio = cJSON_GetObjectItemCaseSensitive(delta, "audio");
+        if (audio) {
+          cJSON *tr = cJSON_GetObjectItemCaseSensitive(audio, "transcript");
+          if (cJSON_IsString(tr) && tr->valuestring && tr->valuestring[0]) {
+            frag = tr->valuestring;
+          }
+        }
+      }
+    }
+  }
+
+  if (frag) {
+    size_t fl = strlen(frag);
+    if (ctx->text_len + fl < APP_RESPONSE_TEXT_MAX - 1) {
+      memcpy(ctx->text + ctx->text_len, frag, fl);
+      ctx->text_len += fl;
+      ctx->text[ctx->text_len] = '\0';
+    }
+    /* Update display at most every 250 ms to avoid GUI overload */
+    TickType_t now = xTaskGetTickCount();
+    if ((now - ctx->last_gui_tick) >= pdMS_TO_TICKS(250)) {
+      char disp[APP_RESPONSE_TEXT_MAX];
+      strlcpy(disp, ctx->text, sizeof(disp));
+      app_utf8_to_ascii(disp);
+      gui_set_response(disp);
+      ctx->last_gui_tick = now;
+    }
+  }
+
+  cJSON_Delete(chunk);
+}
+
+static void app_sse_feed(app_sse_ctx_t *ctx, const char *buf, int len) {
+  for (int i = 0; i < len && !ctx->done; i++) {
+    char c = buf[i];
+    if (c == '\n') {
+      /* strip trailing \r */
+      if (ctx->line_buf_pos > 0 &&
+          ctx->line_buf[ctx->line_buf_pos - 1] == '\r') {
+        ctx->line_buf_pos--;
+      }
+      ctx->line_buf[ctx->line_buf_pos] = '\0';
+      if (strncmp(ctx->line_buf, "data: ", 6) == 0) {
+        app_sse_on_data(ctx, ctx->line_buf + 6);
+      }
+      ctx->line_buf_pos = 0;
+    } else if (ctx->line_buf_pos < APP_SSE_LINE_BUF - 1) {
+      ctx->line_buf[ctx->line_buf_pos++] = c;
+    }
+  }
+}
+
+/* -----------------------------------------------------------------------
+ * HTTP POST (streaming, persistent client)
+ * ----------------------------------------------------------------------- */
+
+static esp_err_t app_http_post_json(const char *request_json, char *out_text,
+                                    size_t out_text_len, int *http_code) {
+  if (!request_json || !out_text || !http_code) {
+    return ESP_ERR_INVALID_ARG;
+  }
+  *http_code = 0;
+
+  esp_err_t err = app_http_client_ensure();
   if (err != ESP_OK) {
-    esp_http_client_cleanup(client);
+    return err;
+  }
+
+  const size_t json_len = strlen(request_json);
+
+  esp_http_client_set_method(s_http_client, HTTP_METHOD_POST);
+  /* Use token from config (set via Captive Portal or SD card).
+   * Skip Authorization header for local servers (Ollama, etc.) that
+   * don't require authentication. */
+  const char *token = config_manager_get()->ai_token;
+  if (token && token[0] != '\0') {
+    char auth_header[256];
+    snprintf(auth_header, sizeof(auth_header), "Bearer %s", token);
+    esp_http_client_set_header(s_http_client, "Authorization", auth_header);
+  }
+  esp_http_client_set_header(s_http_client, "Content-Type", "application/json");
+  esp_http_client_set_post_field(s_http_client, request_json, (int)json_len);
+
+  err = esp_http_client_open(s_http_client, (int)json_len);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "HTTP open failed: %s", esp_err_to_name(err));
+    app_http_client_invalidate();
     return err;
   }
 
   int written =
-      esp_http_client_write(client, request_json, (int)strlen(request_json));
+      esp_http_client_write(s_http_client, request_json, (int)json_len);
   if (written < 0) {
-    esp_http_client_close(client);
-    esp_http_client_cleanup(client);
+    ESP_LOGE(TAG, "HTTP write failed");
+    esp_http_client_close(s_http_client);
+    app_http_client_invalidate();
     return ESP_FAIL;
   }
 
-  (void)esp_http_client_fetch_headers(client);
+  if (esp_http_client_fetch_headers(s_http_client) < 0) {
+    ESP_LOGE(TAG, "HTTP fetch headers failed");
+    esp_http_client_close(s_http_client);
+    app_http_client_invalidate();
+    return ESP_FAIL;
+  }
+
+  *http_code = esp_http_client_get_status_code(s_http_client);
+  if (*http_code < 200 || *http_code >= 300) {
+    char err_buf[256] = {0};
+    esp_http_client_read(s_http_client, err_buf, sizeof(err_buf) - 1);
+    ESP_LOGE(TAG, "AI HTTP status=%d body=%.200s", *http_code, err_buf);
+    esp_http_client_close(s_http_client);
+    return ESP_FAIL;
+  }
+
+  /* Stream SSE response */
+  app_sse_ctx_t sse = {0};
+  sse.last_gui_tick = xTaskGetTickCount();
+
   char read_buf[512];
-  while (1) {
-    int read = esp_http_client_read(client, read_buf, sizeof(read_buf));
-    if (read < 0) {
+  while (!sse.done) {
+    int rd = esp_http_client_read(s_http_client, read_buf, sizeof(read_buf));
+    if (rd < 0) {
       err = ESP_FAIL;
       break;
     }
-    if (read == 0) {
-      break;
+    if (rd == 0) {
+      break; /* end of stream */
     }
-    err = app_http_append(resp, read_buf, read);
-    if (err != ESP_OK) {
-      break;
-    }
+    app_sse_feed(&sse, read_buf, rd);
   }
 
-  *http_code = esp_http_client_get_status_code(client);
-  esp_http_client_close(client);
-  esp_http_client_cleanup(client);
-  return err;
+  /* Close HTTP session — TCP socket kept alive for next interaction */
+  esp_http_client_close(s_http_client);
+
+  if (sse.text_len > 0) {
+    strlcpy(out_text, sse.text, out_text_len);
+    return ESP_OK;
+  }
+  return (err == ESP_OK) ? ESP_ERR_NOT_FOUND : err;
 }
 
 static esp_err_t app_call_ai_once(const char *model, const char *audio_b64,
@@ -666,35 +672,21 @@ static esp_err_t app_call_ai_once(const char *model, const char *audio_b64,
   }
 
   char *request_json = NULL;
-  esp_err_t build_err = app_build_ai_request_json(
+  esp_err_t err = app_build_ai_request_json(
       model, audio_b64, system_profile_text, audio_context_text, inject_history,
       &request_json);
-  if (build_err != ESP_OK) {
-    return build_err;
+  if (err != ESP_OK) {
+    return err;
   }
 
-  app_http_response_t resp = {0};
   int http_code = 0;
-  esp_err_t err = app_http_post_json(request_json, &resp, &http_code);
+  err = app_http_post_json(request_json, out_text, out_text_len, &http_code);
   free(request_json);
 
   if (err != ESP_OK) {
-    free(resp.data);
-    return err;
+    ESP_LOGE(TAG, "AI request failed (http=%d): %s", http_code,
+             esp_err_to_name(err));
   }
-  if (http_code < 200 || http_code >= 300) {
-    ESP_LOGE(TAG, "AI HTTP status=%d body=%s", http_code,
-             resp.data ? resp.data : "(empty)");
-    free(resp.data);
-    return ESP_FAIL;
-  }
-
-  err = app_extract_response_text(resp.data, out_text, out_text_len);
-  if (err != ESP_OK) {
-    ESP_LOGE(TAG, "AI parse error (%s), body=%s", esp_err_to_name(err),
-             resp.data ? resp.data : "(empty)");
-  }
-  free(resp.data);
   return err;
 }
 
@@ -704,9 +696,17 @@ static esp_err_t app_call_ai_with_audio(const uint8_t *wav_data, size_t wav_len,
     return ESP_ERR_INVALID_ARG;
   }
 
-  if (strcmp(SECRET_OPENAI_API_KEY, "YOUR_API_KEY_HERE") == 0) {
+  /* Warn if no token configured and URL points to OpenAI (public cloud requires
+   * auth) */
+  const char *cfg_token = config_manager_get()->ai_token;
+  const char *cfg_url = config_manager_get()->ai_base_url;
+  bool is_local =
+      (strstr(cfg_url, "localhost") || strstr(cfg_url, "127.0.0.1") ||
+       strstr(cfg_url, "192.168.") || strstr(cfg_url, "10."));
+  if ((!cfg_token || cfg_token[0] == '\0') && !is_local) {
     strlcpy(out_text,
-            "Configure SECRET_OPENAI_API_KEY em secret.h para habilitar IA.",
+            "Token nao configurado.\nAcesse o Portal para\nconfigurar a chave "
+            "de API.",
             out_text_len);
     return ESP_ERR_INVALID_STATE;
   }

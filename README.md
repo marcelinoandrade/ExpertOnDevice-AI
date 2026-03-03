@@ -7,7 +7,7 @@
 [![License: Non-Commercial](https://img.shields.io/badge/License-Non--Commercial%20Free-blue.svg)](LICENSE)
 [![Commercial License](https://img.shields.io/badge/Commercial%20License-Request-brightgreen.svg)](mailto:mrclnndrd@gmail.com)
 [![ESP-IDF](https://img.shields.io/badge/ESP--IDF-v5.5.1-red.svg)](https://github.com/espressif/esp-idf)
-[![LLM](https://img.shields.io/badge/LLM-OpenAI%20%7C%20Claude%20%7C%20Groq%20(roadmap)-purple.svg)]()
+[![LLM](https://img.shields.io/badge/LLM-OpenAI%20%7C%20Groq%20%7C%20Ollama%20%7C%20Any%20OpenAI--Compatible-purple.svg)]()
 [![Platform](https://img.shields.io/badge/Platform-ESP32--S3%20%7C%20ESP32--P4-orange.svg)]()
 [![Made in Brazil](https://img.shields.io/badge/Made%20in-Brazil%20🇧🇷-green.svg)]()
 
@@ -28,7 +28,7 @@
 
 More than a simple "AI assistant", this is a **multimodal, configurable, and sovereign platform for professional applications**, designed for scale deployment and multiple monetization models.
 
-- **🤖 LLM Agnostic & Edge Computing**: Swap models (OpenAI, Claude, Groq) dynamically via Web Portal or run an *On-Premise* LLM. Ensures **total privacy, data sovereignty** and no *vendor lock-in*.
+- **🤖 LLM Agnostic & Edge Computing**: Swap models (OpenAI, Groq, Ollama) dynamically via Web Portal — no recompilation. Run any provider with an OpenAI-compatible endpoint, or use a private gateway for full *On-Premise* sovereignty. Eliminates **vendor lock-in** (see architectures below).
 - **💼 Expert Profiles (B2B)**: Deploy the behavior of "agronomists", "mechanics", or "tutors" on the same embedded hardware by simply changing the context. Creates high-value segmented product lines.
 - **💸 Cost-Effective Hardware (< US$33)**: Based on ESP32-S3 (Lite) and P4 (Pro), ensuring extremely low CAPEX, enabling large-scale sales to industrial fleets, schools, and hospitals.
 - **👁️ Multimodality + Local Auditing**: Combines voice and camera interaction in real time, while automated native logs on the SD Card handle institutional *compliance*.
@@ -54,38 +54,57 @@ More than a simple "AI assistant", this is a **multimodal, configurable, and sov
 
 ## 🔓 Open Architecture — LLM Agnostic
 
-> **Current status:** The **ESP32-S3 Lite** firmware allows switching models dynamically via Web Portal. However, because it natively uses the OpenAI `input_audio` tag array format for maximum voice retention and speed, **true LLM-Agnosticism for voice currently requires C firmware recompilation** to adjust the JSON payload structure (or implementing a prior Whisper translation step). The ESP32-P4 Pro version follows the same standard of excellence but handles Computer Vision.
->
-> 🗓️ **Roadmap / Future Work:** Make the firmware fully Payload-Agnostic directly via Captive Portal (translating hardware audio to any provider without recompilation).
->
-> 💡 **The Architecture is Agnostic:** Our firmware features an agnostic HTTP-based architecture decoupled from proprietary SDKs, allowing rapid integration with any AI provider by modifying the open-source JSON payload. Currently, the ecosystem and Captive Portal *(No-Code / Plug and Play edition)* are formatted to prioritize OpenAI's multimodal audio endpoints.
+The firmware uses the **OpenAI Chat Completions API with `input_audio`** as its wire protocol — a standard adopted by the major providers. All credentials and endpoints are configured dynamically via **Captive Portal or SD card** — no recompilation required.
 
-The firmware architecture was designed to support any provider via REST API. When implemented via code adjustments, you can simply edit `settings.json`:
+> ⚠️ **Tested with:** Only **OpenAI** (`gpt-4o-audio-preview`) has been validated end-to-end on real hardware. The other providers in the table are architecturally compatible but **have not been tested yet** — contributions welcome (see Contributing section).
 
-```json
-{
-  "ai": {
-    "base_url": "https://api.anthropic.com/v1",
-    "model":    "claude-3-5-sonnet",
-    "token":    "sk-ant-...",
-    "personality": "You are a technical specialist..."
-  }
-}
+| Provider | Example Model | Status |
+|---|---|---|
+| **OpenAI** | `gpt-4o-audio-preview` | ✅ Tested & validated |
+| **OpenAI** | `gpt-4o-mini-audio-preview` | 🔬 Architecturally compatible, not yet tested |
+| **Groq** | `whisper-large-v3-turbo` | 🔬 Architecturally compatible, not yet tested |
+| **Ollama (local)** | `qwen2.5-audio` | 🔬 Architecturally compatible, not yet tested |
+| **vLLM / LiteLLM** | any compatible | 🔬 Architecturally compatible, not yet tested |
+
+> Leaving the token **empty** in the Captive Portal disables the `Authorization` header automatically, enabling local servers (Ollama, vLLM) that require no authentication.
+
+### Architecture A — Direct to Public Cloud
+
+```
+ESP32-S3
+    │  POST /v1/chat/completions  (WAV in base64, stream:true)
+    ▼
+Cloud Provider API  (OpenAI · Groq · Together.ai · ...)
+    │  SSE streaming response
+    ▼
+Response displayed on screen in real time
 ```
 
-| Provider | Planned base_url | Target Models | Differentiator |
-|---|---|---|---|
-| **OpenAI** *(current)* | `api.openai.com/v1` | `gpt-4o`, `gpt-4o-mini` | Current project standard |
-| **Anthropic** | `api.anthropic.com/v1` | `claude-3-5-sonnet` | Superior technical reasoning |
-| **Groq** | `api.groq.com/openai/v1` | `llama-3-70b`, `mixtral` | Ultra-low latency |
-| **OpenRouter** | `openrouter.ai/api/v1` | All of the above | One key for all |
-| **Local (Ollama)** | `local-ip:11434/v1` | Llama 3, Mistral | Full offline privacy |
+### Architecture B — Private Gateway + Own LLM (zero data leakage)
 
-> 💡 **For enterprises:** With this feature implemented, it is perfectly feasible to point the ESP32-P4's `base_url` to an internal LLM server on the local network (e.g., Ollama) via the Web Portal, keeping audio and images under offline sovereignty without leaking data to the public internet!
+For providers with a different API format (Anthropic, Gemini) or to run your own fully private LLM:
 
-> 🧠 **Multiple Profiles and Personalities:** All behavioral instructions filled in the Web Captive Portal will be combined with the physical expert profile rotated on the board, creating much more singular and unique agents. This data will be persistently saved on the MicroSD card via `settings.json`.
+```
+ESP32-S3
+    │  POST /v1/chat/completions  (same format, always)
+    ▼
+Your Private Gateway  (FastAPI · LiteLLM · custom)
+    │  1. Extracts WAV from base64
+    │  2. Local Whisper (open-source, free) → transcription
+    │  3. Sends text to your LLM (Llama, Mistral, fine-tuned model...)
+    │  4. Returns SSE response in OpenAI format
+    ▼
+Response displayed on screen in real time
+```
+
+**Architecture B advantages:** cost per call = **$0**, data stays on your network, firmware unchanged — just update the URL in the Portal.
+
+> 💡 **[LiteLLM](https://github.com/BerriAI/litellm)** is an open-source gateway that translates 100+ providers (Anthropic, Gemini, Cohere...) to the OpenAI format — use it as a ready-made adapter for Architecture B.
+
+> 🧠 **Multiple Profiles and Personalities:** All behavioral instructions configured via the Captive Portal are combined with the hardware-selected expert profile, creating highly specialized agents. Settings are persisted to the MicroSD card via `config.txt`.
 
 ---
+
 
 ## 📱 Two versions, one ecosystem
 
@@ -107,13 +126,13 @@ The firmware architecture was designed to support any provider via REST API. Whe
 **Hardware:** ESP32-S3 kits (e.g., ESP32-S3-Touch-LCD) starting at **~US$20**
  
 - 🔋 **Optimized Battery**: Native Deep Sleep (< µA), lasts for days. Instant Wake-on-Button.
-- 🎙️ **Refined Processing**: Advanced firmware with RMS audio filtering configurable via Web.
-- ⚙️ **Captive Portal**: Configures Wi-Fi, AI, and Audio Threshold (VAD) dynamically.
+- 🎙️ **Refined Processing**: Advanced firmware with high-pass RMS audio filtering to reduce noise and improve voice clarity.
+- ⚙️ **Captive Portal**: Configures Wi-Fi, AI credentials (token, URL, model), and expert profiles dynamically — no USB cable needed.
 - ⚡ **High Robustness**: Asynchronous management with `FreeRTOS Queues` and optimized use of 8MB `PSRAM`.
 - 💾 **Local Persistence**: Records WAVs and chat logs to SD Card (Opportunistic Saving).
 - 👕 **Ultra Portable**: Ideal for pocket assistants, wearables, or smart badges.
 
-> 🌐 **Intuitive Configuration**: The Captive Portal allows adjusting the Audio Threshold (RMS) and AI credentials without cables.
+> 🌐 **Intuitive Configuration**: The Captive Portal saves all settings to `/sdcard/data/config.txt` on the SD card and restarts the device automatically.
 > ![Captive Portal S3](imagens/Captive%20Portal.png)
  
 ---
@@ -213,17 +232,24 @@ Instead of a generic assistant, the device **changes its behavior** according to
 
 ### How profiles work technically
 
-Profiles are **system prompts** stored in the `settings.json` on the SD card, loaded at startup. Switching profiles = editing the `ai.personality` field and restarting — **no firmware recompilation needed**.
+Profiles are **system prompts** stored in `/sdcard/data/config.txt` on the SD card, loaded at startup. Change profiles via the Captive Portal — **no firmware recompilation needed**.
 
 ```json
 {
   "ai": {
-    "personality": "You are an agronomist specialized in tropical horticulture..."
-  }
+    "token": "sk-...",
+    "base_url": "https://api.openai.com/v1/chat/completions",
+    "model": "gpt-4o-audio-preview",
+    "personality": "You are an agronomist specialized in tropical horticulture...",
+    "profiles": {
+      "general": { "name": "Geral", "prompt": "...", "terms": "..." }
+    }
+  },
+  "wifi": { "ssid": "MyNetwork", "password": "..." }
 }
 ```
 
-Want a fully customized profile for your business? Just edit `settings.json` — or configure it via the Captive Portal directly in the field.
+Want a fully customized profile for your business? Configure it via the Captive Portal directly in the field.
 
 ---
 
@@ -244,7 +270,7 @@ The project's modular architecture allows the same logic — media capture, AI o
 ### Prerequisites
 - [ESP-IDF v5.5.1](https://docs.espressif.com/projects/esp-idf/en/stable/esp32p4/get-started/)
 - Hardware: **ESP32-P4-EYE** or any **ESP32-S3** board with microphone
-- Account with any AI provider with REST API (OpenAI, Anthropic, Groq...)
+- Account with any AI provider with an OpenAI-compatible REST API (OpenAI, Groq, or self-hosted via Ollama/vLLM)
 
 | Hardware | Where to buy | Price (reference) |
 |---|---|---|
@@ -283,10 +309,10 @@ idf.py -p /dev/ttyUSB0 build flash monitor  # Linux
 ### 3. ⚙️ Zero-Touch Configuration (Captive Portal)
 > No need to recompile! Perfect for field deployment.
 
-1. **Hold BTN2 + BTN3 for 10 seconds**
-2. Connect to the `Assistant-Config-P4` Wi-Fi (no password)
+1. **Hold the physical button + touch the profile button (M) for 10 seconds** (S3) or **hold BTN2 + BTN3 for 10 seconds** (P4)
+2. Connect to the `Assistant-Config-S3` (S3) or `Assistant-Config-P4` (P4) Wi-Fi (no password)
 3. Open the browser at `http://192.168.4.1`
-4. Fill in SSID, Password, and Token — the device restarts automatically
+4. Fill in SSID, Password, Token and AI URL — the device restarts automatically
 
 ### 4. How to use
 ```
@@ -382,7 +408,7 @@ User → [Voice + Optional Photo]
 
 - [x] **Robust Push-to-Talk**: Starts on hardware falling edge and ends on rising edge deterministically. The last AI response actively persists on the display for the user.
 - [x] **Voice** mode (audio only) and **Photo+Voice** mode (camera + audio simultaneously).
-- [x] **Dynamic Base URL and Model**: Switch LLM providers via Captive Portal without plugging cables or recompiling firmware (Note: As of today, dynamically swapping models for the specific payload of hardware audio requires adjusting the native JSON structure, making true Voice-Agnosticism a future roadmap).
+- [x] **Dynamic Base URL, Token and Model**: Switch providers and LLMs via Captive Portal with no recompilation. Token field accepts empty value for local servers (Ollama, vLLM). Supports direct cloud (Architecture A) or private gateway + own LLM (Architecture B).
 - [x] **Combined Expert Mode**: Integrate custom personalities via SD Card with hardware-selectable profiles.
 - [x] **Zero-Touch Captive Portal**: Quick Wi-Fi, AI Token, Model, and System Prompt configuration via Web Browser.
 - [x] **Event-Driven Architecture & Advanced PSRAM**: Intensive use of isolated Tasks (`FreeRTOS`), Mutex on SPI bus to protect local logging from GUI/SD slowdowns, and secure offline saving system (`Opportunistic Saving`).
@@ -456,12 +482,50 @@ git push origin feature/local-wake-word
 ```
 
 Areas where contributions are especially welcome:
-- 🤖 **Validate providers and test Multimodal model compatibility** (Anthropic Claude, Groq Whisper) and fix response parsing in C language if needed
+- 🤖 **Test provider compatibility** — The firmware is architecturally ready for multiple providers but **only OpenAI has been validated**. See the guide below.
 - 🔗 **Bring Pro (Vision) functionality to the ESP32-S3** (feature currently available for ESP32-P4)
 - 📡 **OTA (Over-The-Air)**: firmware update over Wi-Fi — no USB cable needed in the field
 - 🔊 TTS (local voice synthesis)
 - 📱 Companion app (BLE/Wi-Fi)
 - 🌍 README translations
+
+### 🧪 Guide: Testing a New LLM Provider
+
+> The firmware sends a fixed OpenAI-format payload with WAV audio in base64. Any provider that accepts this format should work without code changes.
+
+**Steps to validate a new provider:**
+
+1. **Enter Configuration Mode** (hold button to open Captive Portal)
+2. **Set the fields:**
+   - `URL Base da IA` → provider's `/v1/chat/completions` endpoint
+   - `Token / Chave de API` → your provider's API key (or leave empty for local servers)
+   - `Modelo da IA` → e.g. `llama-3.3-70b-versatile` (Groq), `qwen2.5-audio` (Ollama)
+3. **Trigger an interaction** and observe the serial monitor output (`idf.py monitor`)
+4. **Check the serial log** for:
+   - HTTP status code (should be `200`)
+   - SSE chunks arriving (`data: {"choices":[...]}`)
+   - Extracted text appearing on screen
+5. **Report results** in a GitHub Issue with the `provider-test` tag, including:
+   - Provider name and model
+   - Exact base URL used
+   - Whether it worked, and any error messages from the serial monitor
+
+**For local servers (Ollama):**
+```bash
+# Install and run Ollama with an audio-capable model
+ollama pull qwen2.5:audio
+ollama serve
+# Set URL in portal: http://<your-PC-IP>:11434/v1/chat/completions
+# Leave token empty
+```
+
+**For LiteLLM gateway (Anthropic, Gemini, etc.):**
+```bash
+pip install litellm
+litellm --model anthropic/claude-3-5-sonnet --port 8000
+# Set URL in portal: http://<your-PC-IP>:8000/v1/chat/completions
+# Set token: your Anthropic API key
+```
 
 ---
 

@@ -235,8 +235,8 @@ static esp_err_t get_root_handler(httpd_req_t *req) {
            "maxlength='63' required>"
            "<label>Senha Wi-Fi</label><input name='pass' value='%s' "
            "type='password' maxlength='63'>"
-           "<label>Token OpenAI (sk-...)</label><input name='token' value='%s' "
-           "maxlength='219' required>"
+           "<label>Token / Chave de API</label><input name='token' value='%s' "
+           "maxlength='219' placeholder='sk-... (vazio para servidor local)'>"
            "<label>URL Base da IA</label><input name='base_url' value='%s' "
            "maxlength='127'>"
            "<label>Modelo da IA</label><input name='model' value='%s' "
@@ -363,9 +363,8 @@ static esp_err_t post_save_handler(httpd_req_t *req) {
 
   free(body);
 
-  if (ssid[0] == '\0' || token[0] == '\0') {
-    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
-                        "SSID e Token sao obrigatorios");
+  if (ssid[0] == '\0') {
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "SSID e obrigatorio");
     return ESP_FAIL;
   }
 
