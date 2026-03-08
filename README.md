@@ -26,12 +26,15 @@
 
 ## 🚀 "Expert-on-Device" Platform: Data Sovereignty and Strategic Differentiators
 
+> **"Not a toy. A Sovereign AI Infrastructure for the Real World."**
+
 More than a simple "AI assistant", this is a **multimodal, configurable, and sovereign platform for professional applications**, designed for scale deployment and multiple monetization models.
 
-- **🤖 LLM Agnostic & Edge Computing**: Swap models (OpenAI, Groq, Ollama) dynamically via Web Portal — no recompilation. Run any provider with an OpenAI-compatible endpoint, or use a private gateway for full *On-Premise* sovereignty. Eliminates **vendor lock-in** (see architectures below).
-- **💼 Expert Profiles (B2B)**: Deploy the behavior of "agronomists", "mechanics", or "tutors" on the same embedded hardware by simply changing the context. Creates high-value segmented product lines.
+- **🛡️ Radical Data Sovereignty**: Your data never touches the cloud without your permission. Run any provider via a private gateway for full *On-Premise* sovereignty.
+- **👁️ Native Auditing**: Every AI decision is natively recorded in audio and logged on the SD Card for institutional *compliance*. Combines voice and camera interaction in real time.
+- **🧠 Total Agnosticism**: Swap brains (GPT-4o, Llama 3, Groq, Ollama) via Web Portal without recompiling a single line of C. Eliminates **vendor lock-in** (see architectures below).
+- **💼 Domain Expertise (B2B)**: From Agronomist to Engineer, the hardware assumes a technical persona with zero hallucinations. Deploy the behavior of different experts on the same embedded hardware by simply changing the context, creating high-value segmented product lines.
 - **💸 Cost-Effective Hardware (< US$33)**: Based on ESP32-S3 (Lite) and P4 (Pro), ensuring extremely low CAPEX, enabling large-scale sales to industrial fleets, schools, and hospitals.
-- **👁️ Multimodality + Local Auditing**: Combines voice and camera interaction in real time, while automated native logs on the SD Card handle institutional *compliance*.
 - **🧩 Ecosystem and Licensing**: Modular firmware ready for OEM agreements. Enables recurring revenue by selling "expert profiles as a service" far beyond simple hardware sales.
 
 ---
