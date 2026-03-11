@@ -216,7 +216,10 @@ Response displayed on screen in real time
 
 **Expert-on-Device** is the core idea that differentiates this project from a simple "button that calls ChatGPT".
 
-Instead of a generic assistant, the device **changes its behavior** according to the configured profile — like having a dedicated specialist for each use context:
+Instead of a generic assistant, the device **changes its behavior** according to the configured profile — like having a dedicated specialist for each use context. 
+
+### 1. Human Personas
+The simplest application is acting as a domain specialist:
 
 | Profile | The device behaves like... | Usage Example |
 |---|---|---|
@@ -226,6 +229,17 @@ Instead of a generic assistant, the device **changes its behavior** according to
 | ⚙️ **Engineer** | Technical specialist | *"What is this component?"* (photo) — identifies and describes specifications |
 | 🩺 **Health** | Clinical aide | *"Record: patient reports pain for 3 days"* — formats for medical records |
 | 🔧 **General** | All-purpose assistant | Everyday use without specific context |
+
+### 2. Ubiquity of Intelligence (The "Thing" that Thinks)
+The true disruptive vision of EoD is moving the "expert" from a human figure to an **inanimate object**. It gives "technical consciousness" to raw matter, removing the barrier between raw data and actionable insights. The object itself becomes the specialist:
+
+| Object | The "Thing" behaves like... | System Prompt / Context Example |
+|---|---|---|
+| 🏃 **Smart Treadmill**| Biomechanics expert | *"You are a smart treadmill. If user starts: 'Let's keep 6km/h to warm up'. During workout: 'Careful, you are putting too much pressure on your right heel.'"* |
+| 🧊 **Refrigerator** | Nutritionist | *"You are a smart refrigerator. I see eggs and tomatoes. Let's make an omelet? You need 20g of protein to reach your daily goal."* |
+| 🪖 **PPE Helmet** | Safety Engineer | *"You are a safety helmet. Warning: high risk of fall without harness ahead. Report logged to SD card."* |
+
+When the "thing" is the expert, intelligence becomes **contextual and passive**. You don't need to open an app; the treadmill feels your speed and sees your posture. A local gym can offer an elite personal trainer on every treadmill without increasing monthly fees, powered by an underlying ~$33 ESP32 processing audio and vision privately on the Edge.
 
 ### Why is this revolutionary?
 
