@@ -85,7 +85,7 @@ Response displayed on screen in real time
 
 ### Architecture B — Private Gateway + Own LLM (zero data leakage)
 
-For providers with a different API format (Anthropic, Gemini) or to run your own fully private LLM:
+For providers with a different API format (Anthropic, Gemini, DeepSeek) or to run your own fully private LLM:
 
 ```
 ESP32-S3
@@ -540,7 +540,7 @@ ollama serve
 # Leave token empty
 ```
 
-**For LiteLLM gateway (Anthropic, Gemini, etc.):**
+**For LiteLLM gateway (Anthropic, Gemini, DeepSeek, etc.):**
 ```bash
 pip install litellm
 litellm --model anthropic/claude-3-5-sonnet --port 8000
