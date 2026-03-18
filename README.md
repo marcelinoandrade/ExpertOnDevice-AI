@@ -202,7 +202,20 @@ Response displayed on screen in real time
 👕 Wearables & Consumer
    → Smart glasses, smartwatch, personal pocket assistant
    → ROI: US$186 billion market in wearable devices (2027)
+
+🎓 Active Learning — Children, Students & Diverse Profiles
+   → Pocket tutor that adapts its language and pace to the learner's level
+   → Asks questions back instead of just answering — promotes retention, not dependency
+   → Works offline-ready (local LLM via Ollama) in low-connectivity schools
+   → Profiles: "Child 6–10", "Teen", "Adult Literacy", "Special Needs", "ESL Learner"
+   → ROI: personalized Socratic tutoring at US$20 hardware — no monthly EdTech subscription
 ```
+
+> 💡 **Active Learning Profile Design Principle**  
+> An effective tutor *does not answer immediately*. The device prompt should follow the **Socratic cycle**:  
+> *Probe → Challenge → Scaffold → Confirm* — nudging the learner to reason before receiving the answer.  
+> Example system prompt snippet: *"You are a patient tutor for a 9-year-old. Never give the answer directly. Ask one guiding question first. Use simple words and real-world examples. Celebrate effort."*  
+> Profiles can be age-gated, subject-scoped (math, reading, science), or tailored for neurodiverse learners — all configurable via the Captive Portal with no recompilation.
 
 ---
 
