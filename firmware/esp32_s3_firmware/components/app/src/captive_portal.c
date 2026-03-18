@@ -144,6 +144,36 @@ static void dns_server_task(void *pvParameters) {
 }
 
 /* -----------------------------------------------------------------------
+ * HTML attribute escaping — evita quebra de formulário se o valor
+ * contiver caracteres especiais como " < > &
+ * Substitui in-place: src → dst, trunca em dst_max-1 chars úteis.
+ * ----------------------------------------------------------------------- */
+static void html_attr_escape(char *dst, const char *src, size_t dst_max) {
+  size_t di = 0;
+  while (*src && di < dst_max - 1) {
+    const char *ent = NULL;
+    switch ((unsigned char)*src) {
+      case '&':  ent = "&amp;";  break;
+      case '"':  ent = "&quot;"; break;
+      case '\'': ent = "&#39;";  break;
+      case '<':  ent = "&lt;";   break;
+      case '>':  ent = "&gt;";   break;
+      default:   break;
+    }
+    if (ent) {
+      size_t el = strlen(ent);
+      if (di + el >= dst_max - 1) break; /* sem espaço para entidade completa */
+      memcpy(dst + di, ent, el);
+      di += el;
+    } else {
+      dst[di++] = *src;
+    }
+    src++;
+  }
+  dst[di] = '\0';
+}
+
+/* -----------------------------------------------------------------------
  * URL decode simples (application/x-www-form-urlencoded)
  * ----------------------------------------------------------------------- */
 static void url_decode(char *dst, const char *src, size_t dst_max) {
@@ -226,70 +256,174 @@ static esp_err_t get_root_handler(httpd_req_t *req) {
       "<form method='POST' action='/save'>");
 
   // Part 2: Wi-Fi and Core AI
-  char *buf = malloc(1024);
-  if (!buf)
+  /* Padrão de renderização segura: envia label+prefixo | valor escapado | sufixo
+   * como chunks separados — evita snprintf com buffers de tamanho variável. */
+
+  /* --- SSID (esc pequeno: 64*6=384 bytes, pode ir na stack) --- */
+  {
+    char esc[CONFIG_WIFI_SSID_MAX * 6];
+    html_attr_escape(esc, conf->wifi_ssid, sizeof(esc));
+    httpd_resp_sendstr_chunk(req, "<label>Wi-Fi SSID</label>"
+                                  "<input name='ssid' value='");
+    httpd_resp_sendstr_chunk(req, esc);
+    httpd_resp_sendstr_chunk(req, "' maxlength='63' required>");
+  }
+  httpd_resp_sendstr_chunk(req,
+      "<label>Senha Wi-Fi</label>"
+      "<input name='pass' value='' type='password' maxlength='63'"
+      " placeholder='(deixe vazio para manter)'>");
+
+  /* --- Token (esc grande: 220*6=1320 bytes → heap) --- */
+  {
+    char *esc = malloc(CONFIG_AI_TOKEN_MAX * 6);
+    if (!esc) return ESP_ERR_NO_MEM;
+    html_attr_escape(esc, conf->ai_token, CONFIG_AI_TOKEN_MAX * 6);
+    httpd_resp_sendstr_chunk(req,
+        "<label>Token / Chave de API</label>"
+        "<input name='token' value='");
+    httpd_resp_sendstr_chunk(req, esc);
+    httpd_resp_sendstr_chunk(req,
+        "' maxlength='219' placeholder='sk-... (vazio para servidor local)'>");
+    free(esc);
+  }
+
+  /* --- URL Base (esc: 128*6=768 bytes, stack) --- */
+  {
+    char esc[CONFIG_AI_BASE_URL_MAX * 6];
+    html_attr_escape(esc, conf->ai_base_url, sizeof(esc));
+    httpd_resp_sendstr_chunk(req,
+        "<label>URL Base da IA</label><input name='base_url' value='");
+    httpd_resp_sendstr_chunk(req, esc);
+    httpd_resp_sendstr_chunk(req, "' maxlength='127'>");
+  }
+
+  /* --- Modelo (esc: 64*6=384 bytes, stack) --- */
+  {
+    char esc[CONFIG_AI_MODEL_MAX * 6];
+    html_attr_escape(esc, conf->ai_model, sizeof(esc));
+    httpd_resp_sendstr_chunk(req,
+        "<label>Modelo da IA</label><input name='model' value='");
+    httpd_resp_sendstr_chunk(req, esc);
+    httpd_resp_sendstr_chunk(req, "' maxlength='63'>");
+  }
+
+  /* --- Personalidade (esc grande: 256*6=1536 bytes → heap) --- */
+  {
+    char *esc = malloc(CONFIG_AI_PERSONALITY_MAX * 6);
+    if (!esc) return ESP_ERR_NO_MEM;
+    html_attr_escape(esc, conf->ai_personality, CONFIG_AI_PERSONALITY_MAX * 6);
+    httpd_resp_sendstr_chunk(req,
+        "<label>Personalidade da IA</label>"
+        "<textarea name='personality' maxlength='255'>");
+    httpd_resp_sendstr_chunk(req, esc);
+    httpd_resp_sendstr_chunk(req, "</textarea>");
+    free(esc);
+  }
+
+  // Part 3: Profiles — dinâmicos (1 a CONFIG_MAX_PROFILES)
+  httpd_resp_sendstr_chunk(req,
+      "<hr style='border:1px solid #0f3460;margin:16px 0'>"
+      "<p style='color:#e94560;margin:0 0 8px 0'>"
+      "<b>Perfis Especialistas (1 a 6)</b></p>"
+      "<div style='display:flex;gap:8px;margin-bottom:10px'>"
+      "<button type='button' onclick='addP()'"
+      " style='flex:1;padding:8px;background:#0f3460;color:#a0c4ff;"
+      "border:none;border-radius:6px;font-size:14px;cursor:pointer'>"
+      "&#43; Perfil</button>"
+      "<button type='button' onclick='rmP()'"
+      " style='flex:1;padding:8px;background:#0f3460;color:#e94560;"
+      "border:none;border-radius:6px;font-size:14px;cursor:pointer'>"
+      "&#8722; Perfil</button>"
+      "</div>");
+
+  // Renderiza os 6 slots — esconde os inativos via style inline
+  char *pbuf = malloc(1500);
+  if (!pbuf) {
     return ESP_ERR_NO_MEM;
+  }
 
-  snprintf(buf, 1024,
-           "<label>Wi-Fi SSID</label><input name='ssid' value='%s' "
-           "maxlength='63' required>"
-           "<label>Senha Wi-Fi</label><input name='pass' value='%s' "
-           "type='password' maxlength='63'>"
-           "<label>Token / Chave de API</label><input name='token' value='%s' "
-           "maxlength='219' placeholder='sk-... (vazio para servidor local)'>"
-           "<label>URL Base da IA</label><input name='base_url' value='%s' "
-           "maxlength='127'>"
-           "<label>Modelo da IA</label><input name='model' value='%s' "
-           "maxlength='63'>",
-           conf->wifi_ssid, conf->wifi_pass, conf->ai_token, conf->ai_base_url,
-           conf->ai_model);
-  httpd_resp_sendstr_chunk(req, buf);
+  for (int i = 0; i < CONFIG_MAX_PROFILES; i++) {
+    const char *disp = (i < conf->num_profiles) ? "" : "display:none;";
 
-  snprintf(buf, 1024,
-           "<label>Personalidade da IA</label><textarea name='personality' "
-           "maxlength='255'>%s</textarea>"
-           "<hr style='border:1px solid #0f3460;margin:16px 0'>"
-           "<p style='color:#e94560;margin:0 0 8px 0'><b>Perfis (Natureza, "
-           "Prompt, Termos)</b></p>",
-           conf->ai_personality);
-  httpd_resp_sendstr_chunk(req, buf);
+    /* Cabeçalho do div do slot */
+    snprintf(pbuf, 1500,
+        "<div id='d%d' style='%sborder:1px solid #0f3460;border-radius:8px;"
+        "padding:10px;margin-bottom:8px'>"
+        "<b style='color:#e94560'>Perfil %d</b>",
+        i, disp, i + 1);
+    httpd_resp_sendstr_chunk(req, pbuf);
 
-  // Part 3: Profiles
-  // Profile 1 (Geral)
-  snprintf(buf, 1024,
-           "<label>Perfil 1 - Nome</label><input name='gn' value='%s' "
-           "maxlength='31'>"
-           "<label>Perfil 1 - Prompt</label><textarea name='gp' "
-           "maxlength='511'>%s</textarea>"
-           "<label>Perfil 1 - Termos</label><input name='gt' value='%s' "
-           "maxlength='255'>",
-           conf->profile_general_name, conf->profile_general_prompt,
-           conf->profile_general_terms);
-  httpd_resp_sendstr_chunk(req, buf);
+    /* --- Campo Nome (esc pequeno: 32*6=192 bytes) --- */
+    {
+      char esc_name[CONFIG_PROFILE_NAME_MAX * 6];
+      html_attr_escape(esc_name,
+                       (i < conf->num_profiles) ? conf->profiles[i].name : "",
+                       sizeof(esc_name));
+      snprintf(pbuf, 1500,
+          "<label>Nome</label><input name='n%d' value='%s' maxlength='31'>",
+          i, esc_name);
+      httpd_resp_sendstr_chunk(req, pbuf);
+    }
 
-  // Profile 2 (Agrônomo)
-  snprintf(buf, 1024,
-           "<label>Perfil 2 - Nome</label><input name='an' value='%s' "
-           "maxlength='31'>"
-           "<label>Perfil 2 - Prompt</label><textarea name='ap' "
-           "maxlength='511'>%s</textarea>"
-           "<label>Perfil 2 - Termos</label><input name='at' value='%s' "
-           "maxlength='255'>",
-           conf->profile_agronomo_name, conf->profile_agronomo_prompt,
-           conf->profile_agronomo_terms);
-  httpd_resp_sendstr_chunk(req, buf);
+    /* --- Campo Prompt (esc grande: 512*6=3072 bytes → heap + chunks) --- */
+    snprintf(pbuf, 1500,
+        "<label>Prompt</label><textarea name='r%d' maxlength='511'>", i);
+    httpd_resp_sendstr_chunk(req, pbuf);
+    if (i < conf->num_profiles && conf->profiles[i].prompt[0]) {
+      char *esc_prompt = malloc(CONFIG_PROFILE_PROMPT_MAX * 6);
+      if (esc_prompt) {
+        html_attr_escape(esc_prompt, conf->profiles[i].prompt,
+                         CONFIG_PROFILE_PROMPT_MAX * 6);
+        httpd_resp_sendstr_chunk(req, esc_prompt);
+        free(esc_prompt);
+      }
+    }
 
-  // Profile 3 (Engenheiro)
-  snprintf(buf, 1024,
-           "<label>Perfil 3 - Nome</label><input name='en' value='%s' "
-           "maxlength='31'>"
-           "<label>Perfil 3 - Prompt</label><textarea name='ep' "
-           "maxlength='511'>%s</textarea>"
-           "<label>Perfil 3 - Termos</label><input name='et' value='%s' "
-           "maxlength='255'>",
-           conf->profile_engenheiro_name, conf->profile_engenheiro_prompt,
-           conf->profile_engenheiro_terms);
-  httpd_resp_sendstr_chunk(req, buf);
+    /* --- Campo Termos (esc grande: 256*6=1536 bytes → heap + chunks) --- */
+    httpd_resp_sendstr_chunk(req, "</textarea>");
+    httpd_resp_sendstr_chunk(req, "<label>Termos</label>");
+    httpd_resp_sendstr_chunk(req, "<input name='t");
+    /* envia índice e prefixo do value separado para evitar snprintf longo */
+    snprintf(pbuf, 16, "%d' value='", i);
+    httpd_resp_sendstr_chunk(req, pbuf);
+    if (i < conf->num_profiles && conf->profiles[i].terms[0]) {
+      char *esc_terms = malloc(CONFIG_PROFILE_TERMS_MAX * 6);
+      if (esc_terms) {
+        html_attr_escape(esc_terms, conf->profiles[i].terms,
+                         CONFIG_PROFILE_TERMS_MAX * 6);
+        httpd_resp_sendstr_chunk(req, esc_terms);
+        free(esc_terms);
+      }
+    }
+    httpd_resp_sendstr_chunk(req, "' maxlength='255'></div>");
+  }
+  free(pbuf);
+
+  // Campo oculto com contagem atual + JavaScript de controle
+  {
+    char np_val[4];
+    snprintf(np_val, sizeof(np_val), "%d", conf->num_profiles);
+    httpd_resp_sendstr_chunk(req,
+        "<input type='hidden' name='np' id='np' value='");
+    httpd_resp_sendstr_chunk(req, np_val);
+    httpd_resp_sendstr_chunk(req, "'>");
+  }
+  httpd_resp_sendstr_chunk(req,
+      "<script>"
+      "var c=parseInt(document.getElementById('np').value)||1;"
+      "function addP(){"
+        "if(c<6){"
+          "document.getElementById('d'+c).style.display='block';"
+          "c++;"
+          "document.getElementById('np').value=c;"
+        "}}"
+      "function rmP(){"
+        "if(c>1){"
+          "c--;"
+          "document.getElementById('d'+c).style.display='none';"
+          "document.getElementById('np').value=c;"
+        "}}"
+      "</script>");
 
   // Part 4: Footer
   httpd_resp_sendstr_chunk(
@@ -298,13 +432,13 @@ static esp_err_t get_root_handler(httpd_req_t *req) {
       "<p class='note'>O dispositivo reiniciar&aacute; ap&oacute;s salvar.</p>"
       "</form></body></html>");
 
-  free(buf);
   httpd_resp_sendstr_chunk(req, NULL);
   return ESP_OK;
 }
 
 static esp_err_t post_save_handler(httpd_req_t *req) {
-  if (req->content_len == 0 || req->content_len > 4096) {
+  /* Limite aumentado: 6 perfis × ~800 chars + outros campos */
+  if (req->content_len == 0 || req->content_len > 10240) {
     httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid content length");
     return ESP_FAIL;
   }
@@ -323,69 +457,101 @@ static esp_err_t post_save_handler(httpd_req_t *req) {
   }
   body[recv_len] = '\0';
 
-  char ssid[64] = {0};
-  char pass[64] = {0};
-  char token[220] = {0};
+  /* Campos de configuração básica */
+  char ssid[64]         = {0};
+  char pass[64]         = {0};
+  char token[220]       = {0};
   char personality[256] = {0};
-  char base_url[128] = {0};
-  char model[64] = {0};
+  char base_url[128]    = {0};
+  char model[64]        = {0};
 
-  char p_gen_name[32] = {0};
-  char p_gen_prompt[512] = {0};
-  char p_gen_terms[256] = {0};
-
-  char p_agr_name[32] = {0};
-  char p_agr_prompt[512] = {0};
-  char p_agr_terms[256] = {0};
-
-  char p_eng_name[32] = {0};
-  char p_eng_prompt[512] = {0};
-  char p_eng_terms[256] = {0};
-
-  form_get_field(body, "ssid", ssid, sizeof(ssid));
-  form_get_field(body, "pass", pass, sizeof(pass));
-  form_get_field(body, "token", token, sizeof(token));
+  form_get_field(body, "ssid",        ssid,        sizeof(ssid));
+  form_get_field(body, "pass",        pass,        sizeof(pass));
+  form_get_field(body, "token",       token,       sizeof(token));
   form_get_field(body, "personality", personality, sizeof(personality));
-  form_get_field(body, "base_url", base_url, sizeof(base_url));
-  form_get_field(body, "model", model, sizeof(model));
-
-  form_get_field(body, "gn", p_gen_name, sizeof(p_gen_name));
-  form_get_field(body, "gp", p_gen_prompt, sizeof(p_gen_prompt));
-  form_get_field(body, "gt", p_gen_terms, sizeof(p_gen_terms));
-
-  form_get_field(body, "an", p_agr_name, sizeof(p_agr_name));
-  form_get_field(body, "ap", p_agr_prompt, sizeof(p_agr_prompt));
-  form_get_field(body, "at", p_agr_terms, sizeof(p_agr_terms));
-
-  form_get_field(body, "en", p_eng_name, sizeof(p_eng_name));
-  form_get_field(body, "ep", p_eng_prompt, sizeof(p_eng_prompt));
-  form_get_field(body, "et", p_eng_terms, sizeof(p_eng_terms));
-
-  free(body);
+  form_get_field(body, "base_url",    base_url,    sizeof(base_url));
+  form_get_field(body, "model",       model,       sizeof(model));
 
   if (ssid[0] == '\0') {
+    free(body);
     httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "SSID e obrigatorio");
     return ESP_FAIL;
   }
 
-  ESP_LOGI(TAG, "POST /save => ssid='%s' token='%.8s...' url='%s' model='%s'",
-           ssid, token, base_url, model);
+  /* Número de perfis enviados pelo portal (campo oculto 'np') */
+  char np_str[4] = "1";
+  form_get_field(body, "np", np_str, sizeof(np_str));
+  int num_profiles = atoi(np_str);
+  if (num_profiles < 1)                    num_profiles = 1;
+  if (num_profiles > CONFIG_MAX_PROFILES)  num_profiles = CONFIG_MAX_PROFILES;
 
-  esp_err_t save_err = config_manager_update_and_save(
-      ssid, pass, token, strlen(personality) > 0 ? personality : NULL,
-      strlen(base_url) > 0 ? base_url : NULL, strlen(model) > 0 ? model : NULL);
+  /* Parse dos perfis: n{i}=nome, r{i}=prompt, t{i}=termos
+   * Alocado no HEAP para não explodir a stack da task httpd
+   * (6 × 800 bytes = 4800 bytes — inaceitável na stack) */
+  app_profile_t *profiles = calloc(CONFIG_MAX_PROFILES, sizeof(app_profile_t));
+  if (!profiles) {
+    free(body);
+    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OOM profiles");
+    return ESP_FAIL;
+  }
 
-  config_manager_update_profiles(strlen(p_gen_name) > 0 ? p_gen_name : NULL,
-                                 strlen(p_gen_prompt) > 0 ? p_gen_prompt : NULL,
-                                 strlen(p_gen_terms) > 0 ? p_gen_terms : NULL,
+  for (int i = 0; i < num_profiles; i++) {
+    /* Chaves construídas diretamente — CONFIG_MAX_PROFILES ≤ 6, i é 0-5 */
+    char key[3] = {0, (char)('0' + i), '\0'};
 
-                                 strlen(p_agr_name) > 0 ? p_agr_name : NULL,
-                                 strlen(p_agr_prompt) > 0 ? p_agr_prompt : NULL,
-                                 strlen(p_agr_terms) > 0 ? p_agr_terms : NULL,
+    key[0] = 'n';
+    form_get_field(body, key, profiles[i].name, sizeof(profiles[i].name));
+    key[0] = 'r';
+    form_get_field(body, key, profiles[i].prompt, sizeof(profiles[i].prompt));
+    key[0] = 't';
+    form_get_field(body, key, profiles[i].terms, sizeof(profiles[i].terms));
 
-                                 strlen(p_eng_name) > 0 ? p_eng_name : NULL,
-                                 strlen(p_eng_prompt) > 0 ? p_eng_prompt : NULL,
-                                 strlen(p_eng_terms) > 0 ? p_eng_terms : NULL);
+    /* Garante nome mínimo se o usuário deixou em branco */
+    if (profiles[i].name[0] == '\0') {
+      snprintf(profiles[i].name, sizeof(profiles[i].name), "Perfil %d", i + 1);
+    }
+  }
+
+  free(body);
+
+  ESP_LOGI(TAG,
+           "POST /save => ssid='%s' token='%.8s...' url='%s' model='%s' "
+           "profiles=%d",
+           ssid, token, base_url, model, num_profiles);
+
+  /* ---------------------------------------------------------------
+   * Atualiza TUDO em memória de uma vez, depois salva UMA única vez.
+   * Evita double-save (que pode deixar num_profiles antigo no SD se
+   * a segunda escrita falhar silenciosamente).
+   * --------------------------------------------------------------- */
+  app_config_t *cfg = config_manager_get();
+
+  /* Campos básicos */
+  if (ssid[0])        strlcpy(cfg->wifi_ssid,      ssid,        sizeof(cfg->wifi_ssid));
+  if (pass[0])        strlcpy(cfg->wifi_pass,       pass,        sizeof(cfg->wifi_pass));
+  if (token[0])       strlcpy(cfg->ai_token,        token,       sizeof(cfg->ai_token));
+  if (personality[0]) strlcpy(cfg->ai_personality,  personality, sizeof(cfg->ai_personality));
+  if (base_url[0])    strlcpy(cfg->ai_base_url,     base_url,    sizeof(cfg->ai_base_url));
+  if (model[0])       strlcpy(cfg->ai_model,        model,       sizeof(cfg->ai_model));
+
+  /* Perfis — sobrescreve array inteiro com o que veio do formulário */
+  cfg->num_profiles = (uint8_t)num_profiles;
+  for (int i = 0; i < num_profiles; i++) {
+    strlcpy(cfg->profiles[i].name,   profiles[i].name,
+            sizeof(cfg->profiles[i].name));
+    strlcpy(cfg->profiles[i].prompt, profiles[i].prompt,
+            sizeof(cfg->profiles[i].prompt));
+    strlcpy(cfg->profiles[i].terms,  profiles[i].terms,
+            sizeof(cfg->profiles[i].terms));
+  }
+  free(profiles); /* libera heap — já copiado para cfg */
+
+  /* Garante que o perfil ativo não aponte para um índice inexistente */
+  if (cfg->expert_profile >= cfg->num_profiles) cfg->expert_profile = 0;
+  cfg->loaded = true;
+
+  /* Salva UMA vez com tudo atualizado */
+  esp_err_t save_err = config_manager_save();
 
   if (save_err != ESP_OK) {
     ESP_LOGE(TAG, "Failed to save config: %s", esp_err_to_name(save_err));
@@ -431,7 +597,7 @@ static httpd_handle_t start_http_server(void) {
   config.server_port = 80;
   config.max_open_sockets = 7;
   config.uri_match_fn = httpd_uri_match_wildcard;
-  config.stack_size = 8192;
+  config.stack_size = 12288; /* aumentado: save handler chama cJSON + SD write */
   config.max_uri_handlers = 12;
 
   httpd_handle_t server = NULL;

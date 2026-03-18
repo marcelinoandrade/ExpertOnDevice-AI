@@ -12,17 +12,25 @@ extern "C" {
 /* -----------------------------------------------------------------------
  * Tamanhos máximos dos campos de configuração
  * ----------------------------------------------------------------------- */
-#define CONFIG_WIFI_SSID_MAX 64
-#define CONFIG_WIFI_PASS_MAX 64
-#define CONFIG_AI_TOKEN_MAX                                                    \
-  220 /* Tokens OpenAI svcacct chegam a ~180 chars                             \
-       */
+#define CONFIG_WIFI_SSID_MAX      64
+#define CONFIG_WIFI_PASS_MAX      64
+#define CONFIG_AI_TOKEN_MAX       220
 #define CONFIG_AI_PERSONALITY_MAX 256
-#define CONFIG_AI_BASE_URL_MAX 128
-#define CONFIG_AI_MODEL_MAX 64
+#define CONFIG_AI_BASE_URL_MAX    128
+#define CONFIG_AI_MODEL_MAX       64
 #define CONFIG_PROFILE_PROMPT_MAX 512
-#define CONFIG_PROFILE_TERMS_MAX 256
-#define CONFIG_PROFILE_NAME_MAX 32
+#define CONFIG_PROFILE_TERMS_MAX  256
+#define CONFIG_PROFILE_NAME_MAX   32
+#define CONFIG_MAX_PROFILES       6   /* máximo de perfis dinâmicos */
+
+/* -----------------------------------------------------------------------
+ * Estrutura de um perfil especialista
+ * ----------------------------------------------------------------------- */
+typedef struct {
+  char name[CONFIG_PROFILE_NAME_MAX];
+  char prompt[CONFIG_PROFILE_PROMPT_MAX];
+  char terms[CONFIG_PROFILE_TERMS_MAX];
+} app_profile_t;
 
 /* -----------------------------------------------------------------------
  * Estrutura principal de configuração
@@ -37,27 +45,18 @@ typedef struct {
   char ai_personality[CONFIG_AI_PERSONALITY_MAX];
   char ai_base_url[CONFIG_AI_BASE_URL_MAX];
   char ai_model[CONFIG_AI_MODEL_MAX];
-  app_expert_profile_t expert_profile;
+  app_expert_profile_t expert_profile; /* índice 0..num_profiles-1 */
 
-  /* Perfis Especialistas */
-  char profile_general_name[CONFIG_PROFILE_NAME_MAX];
-  char profile_general_prompt[CONFIG_PROFILE_PROMPT_MAX];
-  char profile_general_terms[CONFIG_PROFILE_TERMS_MAX];
-
-  char profile_agronomo_name[CONFIG_PROFILE_NAME_MAX];
-  char profile_agronomo_prompt[CONFIG_PROFILE_PROMPT_MAX];
-  char profile_agronomo_terms[CONFIG_PROFILE_TERMS_MAX];
-
-  char profile_engenheiro_name[CONFIG_PROFILE_NAME_MAX];
-  char profile_engenheiro_prompt[CONFIG_PROFILE_PROMPT_MAX];
-  char profile_engenheiro_terms[CONFIG_PROFILE_TERMS_MAX];
+  /* Perfis Especialistas — dinâmicos */
+  uint8_t       num_profiles;                   /* 1..CONFIG_MAX_PROFILES */
+  app_profile_t profiles[CONFIG_MAX_PROFILES];  /* array de perfis */
 
   /* Hardware */
   uint8_t volume;     /* 0–100 */
   uint8_t brightness; /* 0–100 */
 
   /* Estado interno */
-  bool loaded; /* true se o arquivo foi lido com sucesso */
+  bool loaded;
 } app_config_t;
 
 /* -----------------------------------------------------------------------
@@ -75,30 +74,16 @@ app_config_t *config_manager_get(void);
 
 /**
  * @brief Carrega /sdcard/data/config.txt para a struct interna.
- *
- * Deve ser chamado APÓS o SD card estar montado.
- * Se o arquivo não existir, mantém os valores de fallback (secret.h).
- *
- * @return ESP_OK se o arquivo foi lido e parseado com sucesso.
- *         ESP_ERR_NOT_FOUND se o arquivo não existe (usando fallback).
- *         Outros códigos em caso de erro de I/O ou parse.
  */
 esp_err_t config_manager_load(void);
 
 /**
  * @brief Salva a struct atual em /sdcard/data/config.txt.
- *
- * Sobrescreve o arquivo existente.
- *
- * @return ESP_OK em caso de sucesso.
  */
 esp_err_t config_manager_save(void);
 
 /**
- * @brief Atualiza Wi-Fi, token e personalidade, depois chama
- * config_manager_save().
- *
- * Conveniência para o handler do Captive Portal.
+ * @brief Atualiza Wi-Fi, token e personalidade, depois chama config_manager_save().
  */
 esp_err_t config_manager_update_and_save(const char *ssid, const char *pass,
                                          const char *ai_token,
@@ -107,12 +92,12 @@ esp_err_t config_manager_update_and_save(const char *ssid, const char *pass,
                                          const char *ai_model);
 
 /**
- * @brief Atualiza os perfis especialistas na memória e salva.
+ * @brief Atualiza o array de perfis especialistas na memória e salva.
+ * @param count   Número de perfis ativos (1..CONFIG_MAX_PROFILES).
+ * @param profiles Array com os perfis preenchidos.
  */
-esp_err_t config_manager_update_profiles(
-    const char *gen_name, const char *gen_prompt, const char *gen_terms,
-    const char *agro_name, const char *agro_prompt, const char *agro_terms,
-    const char *eng_name, const char *eng_prompt, const char *eng_terms);
+esp_err_t config_manager_update_profiles(uint8_t count,
+                                         const app_profile_t *profiles);
 
 #ifdef __cplusplus
 }

@@ -4,8 +4,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "app_state.h"
 #include "app_storage.h"
 #include "audio_utils.h"
+#include "bsp.h"
+#include "captive_portal.h"
 #include "cJSON.h"
 #include "config_manager.h"
 #include "driver/gpio.h"
@@ -16,15 +19,9 @@
 #include "esp_netif.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
+#include "gui.h"
 #include "lwip/ip4_addr.h"
 #include "mbedtls/base64.h"
-
-#include "app_state.h"
-#include "app_storage.h"
-#include "bsp.h"
-#include "captive_portal.h"
-#include "config_manager.h"
-#include "gui.h"
 
 #define APP_TASK_STACK_SIZE (10 * 1024)
 #define APP_TASK_PRIORITY 5
@@ -70,7 +67,7 @@ static bool s_config_longpress_active;
 static esp_http_client_handle_t s_http_client = NULL;
 static char s_http_client_url[512] = {0};
 
-static app_expert_profile_t s_expert_profile = APP_EXPERT_PROFILE_GENERAL;
+static app_expert_profile_t s_expert_profile = 0; /* índice 0 = primeiro perfil */
 static char s_last_response[APP_RESPONSE_TEXT_MAX] =
     "Pronto.\nSegure para falar.";
 
@@ -320,28 +317,20 @@ static void app_utf8_to_ascii(char *text) {
 static void app_set_state(app_state_t state);
 
 static const char *app_profile_system_prompt(app_expert_profile_t profile) {
-  switch (profile) {
-  case APP_EXPERT_PROFILE_AGRONOMO:
-    return config_manager_get()->profile_agronomo_prompt;
-  case APP_EXPERT_PROFILE_ENGENHEIRO:
-    return config_manager_get()->profile_engenheiro_prompt;
-  case APP_EXPERT_PROFILE_GENERAL:
-  default:
-    return config_manager_get()->profile_general_prompt;
+  const app_config_t *cfg = config_manager_get();
+  if (profile < cfg->num_profiles) {
+    return cfg->profiles[profile].prompt;
   }
+  return cfg->profiles[0].prompt; /* fallback seguro */
 }
 
 static const char *
 app_profile_transcription_terms(app_expert_profile_t profile) {
-  switch (profile) {
-  case APP_EXPERT_PROFILE_AGRONOMO:
-    return config_manager_get()->profile_agronomo_terms;
-  case APP_EXPERT_PROFILE_ENGENHEIRO:
-    return config_manager_get()->profile_engenheiro_terms;
-  case APP_EXPERT_PROFILE_GENERAL:
-  default:
-    return config_manager_get()->profile_general_terms;
+  const app_config_t *cfg = config_manager_get();
+  if (profile < cfg->num_profiles) {
+    return cfg->profiles[profile].terms;
   }
+  return cfg->profiles[0].terms; /* fallback seguro */
 }
 
 static esp_err_t app_build_ai_request_json(
@@ -365,7 +354,10 @@ static esp_err_t app_build_ai_request_json(
 
   cJSON *system_msg = cJSON_CreateObject();
   cJSON_AddStringToObject(system_msg, "role", "system");
-  char *system_content = malloc(1024);
+  /* Buffer dimensionado para o pior caso:
+   * ~431 chars fixos + 255 (personality) + 511 (profile prompt) + margem = 1280.
+   * Usa 1536 para folga segura. */
+  char *system_content = malloc(1536);
   if (!system_content) {
     cJSON_Delete(root);
     return ESP_ERR_NO_MEM;
@@ -375,7 +367,7 @@ static esp_err_t app_build_ai_request_json(
                                  ? system_profile_text
                                  : "";
   snprintf(
-      system_content, 1024,
+      system_content, 1536,
       "Voce e um assistente por voz embarcado (apenas audio). "
       "REGRA PRINCIPAL: responda em LINGUAGEM NATURAL, como se estivesse "
       "conversando. "
@@ -635,12 +627,18 @@ static esp_err_t app_http_post_json(const char *request_json, char *out_text,
     return ESP_FAIL;
   }
 
-  /* Stream SSE response */
-  app_sse_ctx_t sse = {0};
-  sse.last_gui_tick = xTaskGetTickCount();
+  /* Stream SSE response.
+   * app_sse_ctx_t contém line_buf[4096] + text[512] = ~4613 bytes.
+   * Alocado no heap para não pressionar a stack da app_task (10 KB). */
+  app_sse_ctx_t *sse = calloc(1, sizeof(app_sse_ctx_t));
+  if (!sse) {
+    esp_http_client_close(s_http_client);
+    return ESP_ERR_NO_MEM;
+  }
+  sse->last_gui_tick = xTaskGetTickCount();
 
   char read_buf[512];
-  while (!sse.done) {
+  while (!sse->done) {
     int rd = esp_http_client_read(s_http_client, read_buf, sizeof(read_buf));
     if (rd < 0) {
       err = ESP_FAIL;
@@ -649,16 +647,19 @@ static esp_err_t app_http_post_json(const char *request_json, char *out_text,
     if (rd == 0) {
       break; /* end of stream */
     }
-    app_sse_feed(&sse, read_buf, rd);
+    app_sse_feed(sse, read_buf, rd);
   }
 
   /* Close HTTP session — TCP socket kept alive for next interaction */
   esp_http_client_close(s_http_client);
 
-  if (sse.text_len > 0) {
-    strlcpy(out_text, sse.text, out_text_len);
-    return ESP_OK;
+  bool has_text = (sse->text_len > 0);
+  if (has_text) {
+    strlcpy(out_text, sse->text, out_text_len);
   }
+  free(sse);
+
+  if (has_text) return ESP_OK;
   return (err == ESP_OK) ? ESP_ERR_NOT_FOUND : err;
 }
 
@@ -700,9 +701,16 @@ static esp_err_t app_call_ai_with_audio(const uint8_t *wav_data, size_t wav_len,
    * auth) */
   const char *cfg_token = config_manager_get()->ai_token;
   const char *cfg_url = config_manager_get()->ai_base_url;
-  bool is_local =
-      (strstr(cfg_url, "localhost") || strstr(cfg_url, "127.0.0.1") ||
-       strstr(cfg_url, "192.168.") || strstr(cfg_url, "10."));
+  /* Detecta servidores locais (Ollama, etc.) que não requerem token.
+   * Usa prefixos após "://" para evitar falsos positivos como "110.x.x.x"
+   * que conteria "10." em posição incorreta. */
+  const char *url_host = strstr(cfg_url, "://");
+  url_host = url_host ? url_host + 3 : cfg_url;
+  bool is_local = (strncmp(url_host, "localhost", 9) == 0    ||
+                   strncmp(url_host, "127.0.0.1", 9) == 0    ||
+                   strncmp(url_host, "192.168.", 8) == 0      ||
+                   strncmp(url_host, "10.", 3) == 0            ||
+                   strncmp(url_host, "172.", 4) == 0);
   if ((!cfg_token || cfg_token[0] == '\0') && !is_local) {
     strlcpy(out_text,
             "Token nao configurado.\nAcesse o Portal para\nconfigurar a chave "
@@ -765,11 +773,10 @@ static void app_set_state(app_state_t next_state) {
   const char *state_str = "";
   switch (next_state) {
   case APP_STATE_IDLE: {
-    const char *p_name = (s_expert_profile == APP_EXPERT_PROFILE_AGRONOMO)
-                             ? config_manager_get()->profile_agronomo_name
-                         : (s_expert_profile == APP_EXPERT_PROFILE_ENGENHEIRO)
-                             ? config_manager_get()->profile_engenheiro_name
-                             : config_manager_get()->profile_general_name;
+    const app_config_t *cfg = config_manager_get();
+    const char *p_name = (s_expert_profile < cfg->num_profiles)
+                             ? cfg->profiles[s_expert_profile].name
+                             : cfg->profiles[0].name;
     snprintf(state_buf, sizeof(state_buf), "Pronto - %s", p_name);
     state_str = state_buf;
     break;
@@ -971,12 +978,19 @@ static void app_task(void *arg) {
           xTimerReset(s_sleep_warning_timer, 0);
 
         if (evt.gui_event == GUI_EVENT_PROFILE) {
-          s_expert_profile = (app_expert_profile_t)((s_expert_profile + 1) % 3);
-          ESP_LOGI(TAG, "Profile changed to: %d", (int)s_expert_profile);
-          app_set_state(s_state); // Refresh state text to reflect new profile
+          const app_config_t *cfg = config_manager_get();
+          s_expert_profile =
+              (app_expert_profile_t)((s_expert_profile + 1) % cfg->num_profiles);
+          ESP_LOGI(TAG, "Profile changed to: %d (%s)",
+                   (int)s_expert_profile,
+                   cfg->profiles[s_expert_profile].name);
+          app_set_state(s_state); /* Refresh state text to reflect new profile */
 
           config_manager_get()->expert_profile = s_expert_profile;
-          config_manager_save();
+          esp_err_t sv_err = config_manager_save();
+          if (sv_err != ESP_OK) {
+            ESP_LOGW(TAG, "Profile save failed: %s", esp_err_to_name(sv_err));
+          }
         } else if (evt.gui_event == GUI_EVENT_SCROLL_UP) {
           gui_scroll_response(-APP_RESPONSE_SCROLL_STEP_PX);
         } else if (evt.gui_event == GUI_EVENT_SCROLL_DOWN) {

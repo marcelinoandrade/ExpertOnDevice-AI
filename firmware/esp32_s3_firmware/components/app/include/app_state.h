@@ -1,4 +1,5 @@
 #pragma once
+#include <stdint.h>
 
 typedef enum {
   APP_STATE_IDLE = 0,
@@ -11,8 +12,5 @@ typedef enum {
   APP_STATE_BOOTING,
 } app_state_t;
 
-typedef enum {
-  APP_EXPERT_PROFILE_GENERAL = 0,
-  APP_EXPERT_PROFILE_AGRONOMO,
-  APP_EXPERT_PROFILE_ENGENHEIRO,
-} app_expert_profile_t;
+/* Índice do perfil ativo: 0 .. (num_profiles - 1) */
+typedef uint8_t app_expert_profile_t;
