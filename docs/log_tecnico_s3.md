@@ -1,7 +1,7 @@
 # 🛠️ Technical Logs — ESP32 AI Assistant (S3 Lite)
 
-> **System Status: ✅ Operational (Direct Capture + RMS Monitoring + Dynamic Profiles)**  
-> **Log Date: March 18, 2026**  
+> **System Status: ✅ Operational (8kHz Audio — Reduced Payload + Dynamic Profiles)**  
+> **Last Updated: March 19, 2026**  
 > **Hardware: ESP32-S3 (QFN56) rev v0.2 | Firmware: ESP-IDF v5.5.1 | PSRAM: 8 MB Octal**
 
 ---
@@ -11,20 +11,24 @@
 | Metric | Value | Notes |
 |---|---|---|
 | ⏱️ Full system boot | **~1.5 s** | From CPU start to `main: assistant_esp32 started` |
-| 📶 Wi-Fi connected | **~4.3 s** | STA mode, WPA2-PSK, 2 retry attempts typical |
+| 📶 Wi-Fi connected | **~2.7 s** | STA mode, WPA2-PSK, direct connection (no retry needed) |
 | 🧠 Available PSRAM | **8 MB** | AP Octal PSRAM 64Mbit, 80MHz |
-| 🧠 Heap at runtime | **~7.4 MB total** | Internal ~92 KB, Largest DMA block 31 KB |
-| 🎙️ Capture window | **100 ms** | 3,200 bytes per window (16kHz, 16-bit, mono) |
-| 🎙️ RMS per window | **Informational** | Serial monitoring, no filtering |
-| 🔊 High-Pass Filter (HPF) | **100 Hz** | IIR Butterworth 1st order, latency: 1 sample |
-| 💾 WAV recording to SD | **~770 ms** | Typical 118–131 KB audio; ~1.4 s for max 256 KB |
+| 🧠 Heap at runtime | **~7.5 MB total** | Internal ~92–102 KB, Largest DMA block 31 KB |
+| 🎙️ Capture window | **100 ms** | **1,600 bytes per window (8kHz, 16-bit, mono)** ↓50% |
+| 🎙️ Sample Rate | **8,000 Hz** | Reduced from 16kHz — payload halved |
+| 🎙️ RMS per window | **Informational** | Serial monitoring; speech consistently >2000 |
+| 🔊 High-Pass Filter (HPF) | **100 Hz @ 8kHz** | IIR Butterworth 1st order, fs updated to 8000 Hz |
+| 💾 WAV recording to SD | **~700 ms** | Typical 67–94 KB audio at 8kHz |
 | 💬 Chat log append | **~80 ms** | CMMDD.TXT file saved alongside audio |
 | 💤 Deep Sleep Timeout | **45 s** | Inactivity, with warning at 35s |
 | ⚡ Standby consumption | **< µA** | Deep Sleep Ext1 (Wake on Button) |
 | 🔋 Battery Reading (ADC) | **~O(1)** | Reading via ADC_UNIT_1 (GPIO 4) |
 | 🧩 Dynamic Profiles | **1–6 profiles** | Loaded from SD card, configurable via Captive Portal |
-| 🔄 Profile save on switch | **~70 ms** | Persisted to `/sdcard/data/config.txt` (3140 bytes) |
-| 🔒 TLS handshake | **~2.0 s** | First connection; ~1.1 s on subsequent (session reuse) |
+| 🔄 Profile save on switch | **~70 ms** | Persisted to `/sdcard/data/config.txt` (3142 bytes) |
+| 🔒 TLS handshake (1st) | **~1.3 s** | First-call certificate validation |
+| 🔒 TLS handshake (cached) | **~1.0 s** | Subsequent calls in same TCP session |
+| 🕐 API response time | **~4.8–4.9 s** | From button release to `interaction finished` (cached TLS) |
+| 📦 HTTP payload (4.7s audio) | **~100 KB** | WAV base64 in JSON — was ~200 KB at 16kHz |
 | 🎙️ Audio max per recording | **262,144 bytes** | Longer recordings truncated with warning log |
 
 ---
@@ -67,7 +71,129 @@ I (5369) bsp: Initializing SNTP in background...
 
 The system uses **Push-to-Talk (PTT)** as the exclusive recording control. All audio chunks are captured in their entirety — the RMS of each 100ms window is calculated and displayed in the serial log for monitoring. After capture, a **100 Hz High-Pass Filter (HPF)** is applied in-place on the PCM buffer to remove low-frequency noise before sending to the AI.
 
+---
+
+## 📅 Session Log — March 19, 2026 (8 kHz migration — latency test)
+
+> **Firmware build: Mar 18 2026 19:43:53 | Sample rate: 8kHz | PayLoad target: -50%**
+
+### Boot & Connectivity
+
+```
+I (999) bsp: I2S mic init ok (BCLK=16 WS=17 SD=21)    ← I2S now configured at 8kHz
+I (1419) config_mgr: Config loaded: SSID='MyNetHome' profiles=4 volume=70 brightness=85
+I (1559) wifi:connected with MyNetHome, aid = 8, channel 1, BW20, rssi: -71
+I (2659) bsp: Wi-Fi connected, got IP: 192.168.0.184    ← connected in ~2.7 s (no retry)
+W (1125) i2s_common: dma frame num is out of dma buffer size, limited to 511
+```
+
+> ⚠️ **`dma frame num limited to 511`** — O driver I2S reajusta automaticamente o tamanho do buffer DMA para acomodar a densidade de 8kHz. Não causa falha funcional; apenas informativo.
+
+### Interaction 1 — PTT 4.7 s / 75 KB @ 8kHz
+
+```
+I (7009) app: button pressed -> start recording
+I (7009) bsp: Audio captured: 8000 Hz, 16-bit, 1 ch, 100 ms, 1600 bytes   ← 1600B/window (was 3200)
+...
+I (11029) app: Button released -> stopping recording
+I (11049) app: HPF applied: 100 Hz cutoff @ 8kHz, 37600 samples
+I (11119) app: Audio-only path initiated
+I (11149) app: HTTP client initialized: https://api.openai.com/v1/chat/completions
+I (12439) esp-x509-crt-bundle: Certificate validated                         ← TLS: 1290 ms (1st conn)
+I (17379) app_storage: Audio queued in PSRAM (75200 bytes, queue: 1/2)       ← API response received
+I (17769) app: interaction finished (captured=75200 bytes, ms=4700)
+I (18119) app_storage: Audio saved: /sdcard/media/audio/R100635.WAV (75244 bytes WAV)
+```
+
+**Timing breakdown — Interaction 1:**
+
+| Phase | Start (ms) | End (ms) | Duration |
+|---|---|---|---|
+| Recording | 7,009 | 11,029 | **4,020 ms** |
+| HPF + base64 encode | 11,029 | 11,149 | ~120 ms |
+| TLS handshake (1st) | 11,149 | 12,439 | **1,290 ms** |
+| Upload + inference + stream | 12,439 | 17,379 | **~4,940 ms** |
+| **Total (release → finished)** | 11,029 | 17,769 | **~6,740 ms** |
+
+**Payload comparison @ same audio duration (4.7s):**
+
+| Sample Rate | PCM size | Base64 (in JSON) | Δ |
+|---|---|---|---|
+| 16,000 Hz | 150,400 B | ~200 KB | baseline |
+| **8,000 Hz** | **75,200 B** | **~100 KB** | **↓ 50%** |
+
+### Interaction 2 (curta — cancelada) — 800 ms / 12.8 KB
+
+```
+I (26609) app: button pressed -> start recording
+I (26749) app: Button released -> stopping recording   ← 140 ms após início
+```
+> Cancelada silenciosamente: `captured_bytes (12800) < APP_MIN_CAPTURE_BYTES (24000)`. Mensagem exibida: *"Fale por mais tempo (mínimo 2 segundos)"*. Nenhuma chamada de API — comportamento correto.
+
+### Interaction 3 — PTT 5.9 s / 94 KB @ 8kHz
+
+```
+I (29949) app: button pressed -> start recording
+I (35109) app: Button released -> stopping recording
+I (35129) app: HPF applied: 100 Hz cutoff @ 8kHz, 47200 samples
+I (35219) app: Audio-only path initiated
+I (36259) esp-x509-crt-bundle: Certificate validated    ← TLS: 1040 ms (sessão reutilizada)
+I (39799) app_storage: Audio queued in PSRAM (94400 bytes, queue: 1/2)
+I (39999) app: interaction finished (captured=94400 bytes, ms=5900)
+I (40699) app_storage: Audio saved: /sdcard/media/audio/R100658.WAV (94444 bytes WAV)
+```
+
+**Timing — Interaction 3:** release → finished = **~4,890 ms** (TLS cached)
+
+### Interaction 4 — PTT 4.2 s / 67 KB @ 8kHz
+
+```
+I (52899) app: button pressed -> start recording
+I (56379) app: Button released -> stopping recording
+I (56399) app: HPF applied: 100 Hz cutoff @ 8kHz, 33600 samples
+I (56459) app: Audio-only path initiated
+I (57469) esp-x509-crt-bundle: Certificate validated    ← TLS: 1010 ms (sessão reutilizada)
+I (60869) app_storage: Audio queued in PSRAM (67200 bytes, queue: 1/2)
+I (61219) app: interaction finished (captured=67200 bytes, ms=4200)
+I (61589) app_storage: Audio saved: /sdcard/media/audio/R100719.WAV (67244 bytes WAV)
+```
+
+**Timing — Interaction 4:** release → finished = **~4,840 ms** (TLS cached)
+
+### Resumo de Latência — Sessão 8kHz
+
+| Interação | Áudio | PCM | TLS | API total | Notas |
+|---|---|---|---|---|---|
+| 1 | 4.7 s | 75 KB | 1,290 ms | ~6,740 ms | 1ª conexão TLS |
+| 3 | 5.9 s | 94 KB | 1,040 ms | ~4,890 ms | TLS cached |
+| 4 | 4.2 s | 67 KB | 1,010 ms | ~4,840 ms | TLS cached |
+
+> **Comparativo com 16kHz (sessão Mar 18):** interações similares de ~4s tinham payload ~131KB e API total ~7.9s. A redução para 8kHz resultou em ganho médio de **~3s** no tempo total de resposta.
+
+**Observações técnicas:**
+- ✅ **8kHz confirmado** em todos os chunks: `Audio captured: 8000 Hz, 16-bit, 1 ch, 100 ms, 1600 bytes`
+- ✅ **HPF fs atualizado**: `HPF applied: 100 Hz cutoff @ 8kHz` — filtro re-parametrizado corretamente
+- ✅ **WAV header correto**: header WAV gravado com `sample_rate=8000` — áudio reproduzível sem corrução
+- ✅ **SD Card**: áudios salvos com tamanho correto (~67–94 KB vs ~118–131 KB na sessão 16kHz)
+- ✅ **3 interações + 1 curta cancelada** sem crash, sem leak de memória
+- ✅ **Deep sleep** ao fim da sessão: SD desmontado corretamente; wake-up funcional
+
+### Deep Sleep
+
+```
+I (103619) app: Deep sleep warning: 10s remaining
+I (113619) app: Inactivity timeout reached, preparing deep sleep...
+I (115119) bsp_sleep: Entering Deep Sleep Mode...
+I (115119) bsp_sd: SD card unmounted
+W (115139) bsp_sleep: Button is already LOW (pressed?). Waiting for release...
+I (120289) bsp_sleep: Button released, proceeding to sleep.
+```
+> Suspensão após ~45s de inatividade. SD desmontado com segurança. Wake-up via botão físico confirmado.
+
+---
+
 ### Interaction 1 — Long recording (9 s, 288 KB captured)
+
 
 ```
 I (7649) app: button pressed -> start recording

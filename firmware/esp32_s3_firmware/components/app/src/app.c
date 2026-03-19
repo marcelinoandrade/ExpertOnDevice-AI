@@ -8,8 +8,8 @@
 #include "app_storage.h"
 #include "audio_utils.h"
 #include "bsp.h"
-#include "captive_portal.h"
 #include "cJSON.h"
+#include "captive_portal.h"
 #include "config_manager.h"
 #include "driver/gpio.h"
 #include "esp_crt_bundle.h"
@@ -22,6 +22,7 @@
 #include "gui.h"
 #include "lwip/ip4_addr.h"
 #include "mbedtls/base64.h"
+
 
 #define APP_TASK_STACK_SIZE (10 * 1024)
 #define APP_TASK_PRIORITY 5
@@ -67,7 +68,8 @@ static bool s_config_longpress_active;
 static esp_http_client_handle_t s_http_client = NULL;
 static char s_http_client_url[512] = {0};
 
-static app_expert_profile_t s_expert_profile = 0; /* índice 0 = primeiro perfil */
+static app_expert_profile_t s_expert_profile =
+    0; /* índice 0 = primeiro perfil */
 static char s_last_response[APP_RESPONSE_TEXT_MAX] =
     "Pronto.\nSegure para falar.";
 
@@ -355,8 +357,8 @@ static esp_err_t app_build_ai_request_json(
   cJSON *system_msg = cJSON_CreateObject();
   cJSON_AddStringToObject(system_msg, "role", "system");
   /* Buffer dimensionado para o pior caso:
-   * ~431 chars fixos + 255 (personality) + 511 (profile prompt) + margem = 1280.
-   * Usa 1536 para folga segura. */
+   * ~431 chars fixos + 255 (personality) + 511 (profile prompt) + margem =
+   * 1280. Usa 1536 para folga segura. */
   char *system_content = malloc(1536);
   if (!system_content) {
     cJSON_Delete(root);
@@ -535,7 +537,8 @@ static void app_sse_on_data(app_sse_ctx_t *ctx, const char *data) {
     if ((now - ctx->last_gui_tick) >= pdMS_TO_TICKS(250)) {
       /* Alocado no heap para não pressionar a stack da app_task (10 KB).
        * Com APP_RESPONSE_TEXT_MAX=1024 + ai_response[1024] no caller,
-       * colocar na stack causaria ~4 KB de uso simultâneo — risco de overflow. */
+       * colocar na stack causaria ~4 KB de uso simultâneo — risco de overflow.
+       */
       char *disp = malloc(APP_RESPONSE_TEXT_MAX);
       if (disp) {
         strlcpy(disp, ctx->text, APP_RESPONSE_TEXT_MAX);
@@ -665,7 +668,8 @@ static esp_err_t app_http_post_json(const char *request_json, char *out_text,
   }
   free(sse);
 
-  if (has_text) return ESP_OK;
+  if (has_text)
+    return ESP_OK;
   return (err == ESP_OK) ? ESP_ERR_NOT_FOUND : err;
 }
 
@@ -712,11 +716,11 @@ static esp_err_t app_call_ai_with_audio(const uint8_t *wav_data, size_t wav_len,
    * que conteria "10." em posição incorreta. */
   const char *url_host = strstr(cfg_url, "://");
   url_host = url_host ? url_host + 3 : cfg_url;
-  bool is_local = (strncmp(url_host, "localhost", 9) == 0    ||
-                   strncmp(url_host, "127.0.0.1", 9) == 0    ||
-                   strncmp(url_host, "192.168.", 8) == 0      ||
-                   strncmp(url_host, "10.", 3) == 0            ||
-                   strncmp(url_host, "172.", 4) == 0);
+  bool is_local =
+      (strncmp(url_host, "localhost", 9) == 0 ||
+       strncmp(url_host, "127.0.0.1", 9) == 0 ||
+       strncmp(url_host, "192.168.", 8) == 0 ||
+       strncmp(url_host, "10.", 3) == 0 || strncmp(url_host, "172.", 4) == 0);
   if ((!cfg_token || cfg_token[0] == '\0') && !is_local) {
     strlcpy(out_text,
             "Token nao configurado.\nAcesse o Portal para\nconfigurar a chave "
@@ -857,7 +861,7 @@ static esp_err_t app_do_interaction(void) {
     }
 
     bsp_audio_capture_cfg_t capture_cfg = {
-        .sample_rate_hz = 16000,
+        .sample_rate_hz = 8000,
         .bits_per_sample = 16,
         .channels = 1,
         .capture_ms = APP_CAPTURE_CHUNK_MS,
@@ -898,15 +902,15 @@ static esp_err_t app_do_interaction(void) {
 
   /* High-pass filter: remove low-freq noise to improve speech clarity */
   const size_t sample_count = captured_bytes / sizeof(int16_t);
-  audio_apply_highpass((int16_t *)audio_buffer, sample_count, 100.0f, 16000.0f);
-  ESP_LOGI(TAG, "HPF applied: 100 Hz cutoff, %u samples",
+  audio_apply_highpass((int16_t *)audio_buffer, sample_count, 100.0f, 8000.0f);
+  ESP_LOGI(TAG, "HPF applied: 100 Hz cutoff @ 8kHz, %u samples",
            (unsigned)sample_count);
 
   app_set_state(APP_STATE_THINKING);
 
   size_t wav_len = 0;
   uint8_t *wav_data =
-      app_pcm16_to_wav(audio_buffer, captured_bytes, 16000, 1, 16, &wav_len);
+      app_pcm16_to_wav(audio_buffer, captured_bytes, 8000, 1, 16, &wav_len);
   if (!wav_data) {
     free(audio_buffer);
     return ESP_ERR_NO_MEM;
@@ -920,7 +924,7 @@ static esp_err_t app_do_interaction(void) {
   // --- Queue audio to be saved to SD card opportunistically ---
   if (captured_bytes > 0) {
     esp_err_t audio_save_err =
-        app_storage_queue_audio(audio_buffer, captured_bytes, 16000);
+        app_storage_queue_audio(audio_buffer, captured_bytes, 8000);
     if (audio_save_err != ESP_OK) {
       ESP_LOGW(TAG, "Audio not queued: %s", esp_err_to_name(audio_save_err));
     }
@@ -946,7 +950,7 @@ static esp_err_t app_do_interaction(void) {
 
   ESP_LOGI(TAG, "interaction finished (captured=%u bytes, ms=%u)",
            (unsigned)captured_bytes,
-           (unsigned)((captured_bytes * 1000U) / (16000U * 2U)));
+           (unsigned)((captured_bytes * 1000U) / (8000U * 2U)));
 
   free(audio_buffer);
   return ESP_OK;
@@ -985,12 +989,12 @@ static void app_task(void *arg) {
 
         if (evt.gui_event == GUI_EVENT_PROFILE) {
           const app_config_t *cfg = config_manager_get();
-          s_expert_profile =
-              (app_expert_profile_t)((s_expert_profile + 1) % cfg->num_profiles);
-          ESP_LOGI(TAG, "Profile changed to: %d (%s)",
-                   (int)s_expert_profile,
+          s_expert_profile = (app_expert_profile_t)((s_expert_profile + 1) %
+                                                    cfg->num_profiles);
+          ESP_LOGI(TAG, "Profile changed to: %d (%s)", (int)s_expert_profile,
                    cfg->profiles[s_expert_profile].name);
-          app_set_state(s_state); /* Refresh state text to reflect new profile */
+          app_set_state(
+              s_state); /* Refresh state text to reflect new profile */
 
           config_manager_get()->expert_profile = s_expert_profile;
           esp_err_t sv_err = config_manager_save();

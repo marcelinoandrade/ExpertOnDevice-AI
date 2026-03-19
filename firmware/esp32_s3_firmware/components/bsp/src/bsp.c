@@ -347,7 +347,7 @@ static esp_err_t bsp_audio_init(void) {
                       "i2s channel");
 
   i2s_std_config_t std_cfg = {
-      .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(16000),
+      .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(8000),
       .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT,
                                                       I2S_SLOT_MODE_STEREO),
       .gpio_cfg =
