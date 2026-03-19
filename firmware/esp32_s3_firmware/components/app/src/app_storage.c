@@ -1102,6 +1102,13 @@ esp_err_t app_storage_ensure_mounted(void) {
     return ESP_OK;
   }
 
+  /* Guarda contra chamadas antes de app_storage_init() ter rodado com sucesso.
+   * Sem o mutex, xSemaphoreTake(NULL) causaria crash (guru meditation). */
+  if (!s_sd_mount_mutex) {
+    ESP_LOGW(TAG, "ensure_mounted: storage not initialized yet");
+    return ESP_ERR_INVALID_STATE;
+  }
+
   if (xSemaphoreTake(s_sd_mount_mutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
     ESP_LOGE(TAG, "ensure_mounted: failed to take mount mutex");
     return ESP_ERR_TIMEOUT;

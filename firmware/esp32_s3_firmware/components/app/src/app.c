@@ -34,7 +34,7 @@
 #define APP_MIN_CAPTURE_BYTES 24000
 #define APP_MODE_SELECT_TIMEOUT_MS 4000
 #define APP_PREVIEW_REFRESH_MS 220
-#define APP_RESPONSE_TEXT_MAX 512
+#define APP_RESPONSE_TEXT_MAX 1024
 #define APP_RESPONSE_SCROLL_STEP_PX 22
 #define APP_HTTP_TIMEOUT_MS 45000
 #define APP_DEEP_SLEEP_TIMEOUT_MS 45000
@@ -533,10 +533,16 @@ static void app_sse_on_data(app_sse_ctx_t *ctx, const char *data) {
     /* Update display at most every 250 ms to avoid GUI overload */
     TickType_t now = xTaskGetTickCount();
     if ((now - ctx->last_gui_tick) >= pdMS_TO_TICKS(250)) {
-      char disp[APP_RESPONSE_TEXT_MAX];
-      strlcpy(disp, ctx->text, sizeof(disp));
-      app_utf8_to_ascii(disp);
-      gui_set_response(disp);
+      /* Alocado no heap para não pressionar a stack da app_task (10 KB).
+       * Com APP_RESPONSE_TEXT_MAX=1024 + ai_response[1024] no caller,
+       * colocar na stack causaria ~4 KB de uso simultâneo — risco de overflow. */
+      char *disp = malloc(APP_RESPONSE_TEXT_MAX);
+      if (disp) {
+        strlcpy(disp, ctx->text, APP_RESPONSE_TEXT_MAX);
+        app_utf8_to_ascii(disp);
+        gui_set_response(disp);
+        free(disp);
+      }
       ctx->last_gui_tick = now;
     }
   }
@@ -628,7 +634,7 @@ static esp_err_t app_http_post_json(const char *request_json, char *out_text,
   }
 
   /* Stream SSE response.
-   * app_sse_ctx_t contém line_buf[4096] + text[512] = ~4613 bytes.
+   * app_sse_ctx_t contém line_buf[4096] + text[1024] = ~5125 bytes.
    * Alocado no heap para não pressionar a stack da app_task (10 KB). */
   app_sse_ctx_t *sse = calloc(1, sizeof(app_sse_ctx_t));
   if (!sse) {

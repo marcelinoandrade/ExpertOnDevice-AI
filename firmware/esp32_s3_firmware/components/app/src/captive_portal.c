@@ -210,7 +210,10 @@ static bool form_get_field(const char *body, const char *key, char *dst,
     return false;
   p += strlen(search);
 
-  char raw[1024] = {0};
+  /* Buffer de 2048 para suportar prompts de até 511 chars com encoding
+   * URL completo (%XX). Pior caso: 511 × 3 = 1533 bytes encoded.
+   * Com 1024 o prompt era truncado silenciosamente para ~341 chars. */
+  char raw[2048] = {0};
   size_t ri = 0;
   while (*p && *p != '&' && ri < sizeof(raw) - 1) {
     raw[ri++] = *p++;
@@ -449,13 +452,25 @@ static esp_err_t post_save_handler(httpd_req_t *req) {
     return ESP_FAIL;
   }
 
-  int recv_len = httpd_req_recv(req, body, req->content_len);
-  if (recv_len <= 0) {
-    free(body);
-    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "No body");
-    return ESP_FAIL;
+  /* httpd_req_recv pode retornar menos bytes que content_len numa única
+   * chamada.  É necessário iterar até receber tudo — caso contrário os
+   * campos de perfil (que ficam no final do body) são perdidos. */
+  int total_recv = 0;
+  while (total_recv < req->content_len) {
+    int ret = httpd_req_recv(req, body + total_recv,
+                             req->content_len - total_recv);
+    if (ret <= 0) {
+      if (ret == HTTPD_SOCK_ERR_TIMEOUT) {
+        /* Timeout — tenta novamente */
+        continue;
+      }
+      free(body);
+      httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Recv error");
+      return ESP_FAIL;
+    }
+    total_recv += ret;
   }
-  body[recv_len] = '\0';
+  body[total_recv] = '\0';
 
   /* Campos de configuração básica */
   char ssid[64]         = {0};
