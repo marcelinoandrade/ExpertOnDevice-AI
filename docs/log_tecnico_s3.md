@@ -1,8 +1,9 @@
 # 🛠️ Technical Logs — ESP32 AI Assistant (S3 Lite)
 
-> **System Status: ✅ Operational (8kHz Audio — Reduced Payload + Dynamic Profiles)**  
-> **Last Updated: March 19, 2026**  
-> **Hardware: ESP32-S3 (QFN56) rev v0.2 | Firmware: ESP-IDF v5.5.1 | PSRAM: 8 MB Octal**
+> **System Status: ✅ Operational (8kHz Audio + Deep Sleep Power Optimization)**  
+> **Last Updated: March 28, 2026**  
+> **Hardware: ESP32-S3 (QFN56) rev v0.2 | Firmware: ESP-IDF v5.5.1 | PSRAM: 8 MB Octal**  
+> **Build: Mar 28 2026 12:23:52 | ELF SHA256: eff048b61**
 
 ---
 
@@ -11,286 +12,320 @@
 | Metric | Value | Notes |
 |---|---|---|
 | ⏱️ Full system boot | **~1.5 s** | From CPU start to `main: assistant_esp32 started` |
-| 📶 Wi-Fi connected | **~2.7 s** | STA mode, WPA2-PSK, direct connection (no retry needed) |
+| 📶 Wi-Fi connected (IP) | **~1.5–1.6 s** | From WiFi init to IP obtained — no retry needed |
 | 🧠 Available PSRAM | **8 MB** | AP Octal PSRAM 64Mbit, 80MHz |
-| 🧠 Heap at runtime | **~7.5 MB total** | Internal ~92–102 KB, Largest DMA block 31 KB |
-| 🎙️ Capture window | **100 ms** | **1,600 bytes per window (8kHz, 16-bit, mono)** ↓50% |
-| 🎙️ Sample Rate | **8,000 Hz** | Reduced from 16kHz — payload halved |
-| 🎙️ RMS per window | **Informational** | Serial monitoring; speech consistently >2000 |
-| 🔊 High-Pass Filter (HPF) | **100 Hz @ 8kHz** | IIR Butterworth 1st order, fs updated to 8000 Hz |
-| 💾 WAV recording to SD | **~700 ms** | Typical 67–94 KB audio at 8kHz |
-| 💬 Chat log append | **~80 ms** | CMMDD.TXT file saved alongside audio |
-| 💤 Deep Sleep Timeout | **45 s** | Inactivity, with warning at 35s |
-| ⚡ Standby consumption | **< µA** | Deep Sleep Ext1 (Wake on Button) |
-| 🔋 Battery Reading (ADC) | **~O(1)** | Reading via ADC_UNIT_1 (GPIO 4) |
+| 🧠 Heap at runtime | **~7.5–7.6 MB total** | Internal ~100–102 KB, Largest DMA block 31 KB |
+| 🎙️ Sample Rate | **8,000 Hz** | 16-bit mono, 100 ms window = 1,600 bytes |
+| 🔊 High-Pass Filter (HPF) | **100 Hz @ 8kHz** | IIR Butterworth 1st order, applied before API call |
+| 💾 WAV recording to SD | **~200–800 ms** | Depends on file size; SD kept mounted |
+| 💬 Chat log append | **~100 ms** | CMMDD.TXT appended per interaction |
+| 💤 Deep Sleep Timeout | **~50 s inactivity** | Warning at 10s remaining |
+| ⚡ Deep Sleep current | **~0.1 mA (estimated)** | All peripherals shut down; hw validation pending |
+| ⚡ Sleep current (before fix) | **~30 mA** | Backlight floating HIGH + WiFi/I2S/I2C active |
+| 📶 WiFi modem-sleep ratio | **87–89%** | `WIFI_PS_MIN_MODEM` — measured across 3 sessions |
+| ⏱️ Wake + WiFi reconnect | **~1.5–1.6 s** | Full reboot to IP, consistent across 3 wakeups |
+| 🔆 Backlight during sleep | **OFF (GPIO held LOW)** | `gpio_hold_en()` prevents floating HIGH |
 | 🧩 Dynamic Profiles | **1–6 profiles** | Loaded from SD card, configurable via Captive Portal |
-| 🔄 Profile save on switch | **~70 ms** | Persisted to `/sdcard/data/config.txt` (3142 bytes) |
-| 🔒 TLS handshake (1st) | **~1.3 s** | First-call certificate validation |
-| 🔒 TLS handshake (cached) | **~1.0 s** | Subsequent calls in same TCP session |
-| 🕐 API response time | **~4.8–4.9 s** | From button release to `interaction finished` (cached TLS) |
-| 📦 HTTP payload (4.7s audio) | **~100 KB** | WAV base64 in JSON — was ~200 KB at 16kHz |
+| 🔄 Profile save on switch | **~30–40 ms** | Persisted to `/sdcard/data/config.txt` (3142 bytes) |
+| 🔒 TLS handshake | **~980–1,030 ms** | X.509 certificate validation per session |
+| 🕐 API total time (short) | **~3.9 s** | 2.5s PTT — from release to `interaction finished` |
+| 🕐 API total time (long) | **~5.3 s** | 8.0s PTT — from release to `interaction finished` |
 | 🎙️ Audio max per recording | **262,144 bytes** | Longer recordings truncated with warning log |
+| 🔋 Battery Reading (ADC) | **O(1)** | ADC_UNIT_1 (GPIO 4), calibration at boot |
 
 ---
 
-## 📋 Annotated Boot Sequence
+## 📋 Boot Sequence
 
 ```
-I (417) esp_psram: Found 8MB PSRAM device
-I (421) esp_psram: Speed: 80MHz
-...
+I (24)  boot: ESP-IDF GIT-NOTFOUND 2nd stage bootloader
+I (24)  boot: compile time Mar 28 2026 12:24:12
+I (25)  boot: Multicore bootloader | chip revision: v0.2
+I (32)  boot.esp32s3: Boot SPI Speed: 80MHz | Mode: DIO | Flash: 16MB
+I (375) octal_psram: Found 8MB PSRAM device (AP gen3, 80MHz, 3V)
+I (853) esp_psram: SPI SRAM memory test OK
+I (862) cpu_start: cpu freq: 160000000 Hz
+I (902) heap_init: At 3FCB58E8 len 00033E28 (207 KiB): RAM
+I (907) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM
+I (912) heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM
+I (917) heap_init: At 600FE06C len 00001F7C  (7 KiB): RTCRAM
+I (923) esp_psram: Adding pool of 8192K of PSRAM to heap allocator
+I (946) sleep_gpio: Configure to isolate all GPIO pins in sleep state
+I (952) sleep_gpio: Enable automatic switching of GPIO sleep configuration
 I (999) bsp: Init BSP
 I (999) bsp: Button logic: Active=0, Current Level=0
 I (1119) CST816S: IC id: 182
 I (1119) bsp: I2S mic init ok (BCLK=16 WS=17 SD=21)
 I (1269) bsp_battery: ADC Calibration Success
-I (1269) bsp_battery: Battery ADC initialized
-I (1279) app_storage: Initializing storage subsystem with opportunistic saving
 I (1289) bsp_sd: SD card SPI bus ready (MOSI=38 MISO=40 CLK=39 CS=41)
-I (1319) app_storage: ensure_mounted: Mounting SD card (first time)...
-I (1389) bsp_sd: SD card mounted at /sdcard (SDHC, 29818 MB, 10 MHz)
-I (1399) app_storage: ensure_mounted: SD card mounted successfully
-I (1419) config_mgr: Config loaded: SSID='SanLino' profiles=4 volume=70 brightness=85
-I (1419) app: Dynamic config loaded from SD card
-I (1459) wifi:mode : sta (80:b5:4e:d9:2b:ac)
-I (1469) bsp: Wi-Fi connection started for SSID: SanLino
-I (1479) main: assistant_esp32 started
-W (1649) bsp: Wi-Fi reconnect attempt 1/8
-W (4059) bsp: Wi-Fi reconnect attempt 2/8
-I (4309) wifi:connected with SanLino, aid = 1, channel 6, BW20, bssid = 1e:c5:e2:80:88:21
-I (4309) wifi:security: WPA2-PSK, phy: bgn, rssi: -43
-I (5369) bsp: Wi-Fi connected, got IP: 10.222.248.51
-I (5369) bsp: Initializing SNTP in background...
-```
-
-**Total boot time: ~1.5 seconds** (to `main: started`), **~5.4 s to Wi-Fi connected**. The system initializes without additional calibrations, becoming instantly available for button interaction. Wi-Fi consistently connects on the 2nd retry attempt (typical for WPA2 auth timing). Dynamic profiles are loaded from the SD card at boot — in this session, 4 specialist profiles were active.
-
----
-
-## 🎙️ Interaction Flow — Direct Capture with RMS Monitoring
-
-The system uses **Push-to-Talk (PTT)** as the exclusive recording control. All audio chunks are captured in their entirety — the RMS of each 100ms window is calculated and displayed in the serial log for monitoring. After capture, a **100 Hz High-Pass Filter (HPF)** is applied in-place on the PCM buffer to remove low-frequency noise before sending to the AI.
-
----
-
-## 📅 Session Log — March 19, 2026 (8 kHz migration — latency test)
-
-> **Firmware build: Mar 18 2026 19:43:53 | Sample rate: 8kHz | PayLoad target: -50%**
-
-### Boot & Connectivity
-
-```
-I (999) bsp: I2S mic init ok (BCLK=16 WS=17 SD=21)    ← I2S now configured at 8kHz
+I (1389) bsp_sd: SD card mounted at /sdcard  (SDHC, 29818 MB, 10 MHz)
 I (1419) config_mgr: Config loaded: SSID='MyNetHome' profiles=4 volume=70 brightness=85
-I (1559) wifi:connected with MyNetHome, aid = 8, channel 1, BW20, rssi: -71
-I (2659) bsp: Wi-Fi connected, got IP: 192.168.0.184    ← connected in ~2.7 s (no retry)
-W (1125) i2s_common: dma frame num is out of dma buffer size, limited to 511
+I (1459) wifi:mode : sta (80:b5:4e:d9:2b:ac)
+I (1469) bsp: Wi-Fi connection started for SSID: MyNetHome
+I (1479) main: assistant_esp32 started
+I (1519) wifi:connected with MyNetHome, aid=5, ch5, BW20, rssi: -65
+I (3069) bsp: Wi-Fi connected, got IP: 192.168.0.184
+I (3069) wifi:Set ps type: 1, coexist: 0
+I (3069) bsp: Wi-Fi Power Save: WIFI_PS_MIN_MODEM enabled
+I (3079) bsp: Initializing SNTP in background...
 ```
 
-> ⚠️ **`dma frame num limited to 511`** — O driver I2S reajusta automaticamente o tamanho do buffer DMA para acomodar a densidade de 8kHz. Não causa falha funcional; apenas informativo.
+**Boot time: ~1.5 s** (to `main: started`) | **WiFi IP: at ~3.0 s from power-on**, ~1.5 s from WiFi init.  
+`WIFI_PS_MIN_MODEM` ativo imediatamente após IP — rádio dorme entre beacons DTIM.
 
-### Interaction 1 — PTT 4.7 s / 75 KB @ 8kHz
-
-```
-I (7009) app: button pressed -> start recording
-I (7009) bsp: Audio captured: 8000 Hz, 16-bit, 1 ch, 100 ms, 1600 bytes   ← 1600B/window (was 3200)
-...
-I (11029) app: Button released -> stopping recording
-I (11049) app: HPF applied: 100 Hz cutoff @ 8kHz, 37600 samples
-I (11119) app: Audio-only path initiated
-I (11149) app: HTTP client initialized: https://api.openai.com/v1/chat/completions
-I (12439) esp-x509-crt-bundle: Certificate validated                         ← TLS: 1290 ms (1st conn)
-I (17379) app_storage: Audio queued in PSRAM (75200 bytes, queue: 1/2)       ← API response received
-I (17769) app: interaction finished (captured=75200 bytes, ms=4700)
-I (18119) app_storage: Audio saved: /sdcard/media/audio/R100635.WAV (75244 bytes WAV)
-```
-
-**Timing breakdown — Interaction 1:**
-
-| Phase | Start (ms) | End (ms) | Duration |
-|---|---|---|---|
-| Recording | 7,009 | 11,029 | **4,020 ms** |
-| HPF + base64 encode | 11,029 | 11,149 | ~120 ms |
-| TLS handshake (1st) | 11,149 | 12,439 | **1,290 ms** |
-| Upload + inference + stream | 12,439 | 17,379 | **~4,940 ms** |
-| **Total (release → finished)** | 11,029 | 17,769 | **~6,740 ms** |
-
-**Payload comparison @ same audio duration (4.7s):**
-
-| Sample Rate | PCM size | Base64 (in JSON) | Δ |
-|---|---|---|---|
-| 16,000 Hz | 150,400 B | ~200 KB | baseline |
-| **8,000 Hz** | **75,200 B** | **~100 KB** | **↓ 50%** |
-
-### Interaction 2 (curta — cancelada) — 800 ms / 12.8 KB
-
-```
-I (26609) app: button pressed -> start recording
-I (26749) app: Button released -> stopping recording   ← 140 ms após início
-```
-> Cancelada silenciosamente: `captured_bytes (12800) < APP_MIN_CAPTURE_BYTES (24000)`. Mensagem exibida: *"Fale por mais tempo (mínimo 2 segundos)"*. Nenhuma chamada de API — comportamento correto.
-
-### Interaction 3 — PTT 5.9 s / 94 KB @ 8kHz
-
-```
-I (29949) app: button pressed -> start recording
-I (35109) app: Button released -> stopping recording
-I (35129) app: HPF applied: 100 Hz cutoff @ 8kHz, 47200 samples
-I (35219) app: Audio-only path initiated
-I (36259) esp-x509-crt-bundle: Certificate validated    ← TLS: 1040 ms (sessão reutilizada)
-I (39799) app_storage: Audio queued in PSRAM (94400 bytes, queue: 1/2)
-I (39999) app: interaction finished (captured=94400 bytes, ms=5900)
-I (40699) app_storage: Audio saved: /sdcard/media/audio/R100658.WAV (94444 bytes WAV)
-```
-
-**Timing — Interaction 3:** release → finished = **~4,890 ms** (TLS cached)
-
-### Interaction 4 — PTT 4.2 s / 67 KB @ 8kHz
-
-```
-I (52899) app: button pressed -> start recording
-I (56379) app: Button released -> stopping recording
-I (56399) app: HPF applied: 100 Hz cutoff @ 8kHz, 33600 samples
-I (56459) app: Audio-only path initiated
-I (57469) esp-x509-crt-bundle: Certificate validated    ← TLS: 1010 ms (sessão reutilizada)
-I (60869) app_storage: Audio queued in PSRAM (67200 bytes, queue: 1/2)
-I (61219) app: interaction finished (captured=67200 bytes, ms=4200)
-I (61589) app_storage: Audio saved: /sdcard/media/audio/R100719.WAV (67244 bytes WAV)
-```
-
-**Timing — Interaction 4:** release → finished = **~4,840 ms** (TLS cached)
-
-### Resumo de Latência — Sessão 8kHz
-
-| Interação | Áudio | PCM | TLS | API total | Notas |
-|---|---|---|---|---|---|
-| 1 | 4.7 s | 75 KB | 1,290 ms | ~6,740 ms | 1ª conexão TLS |
-| 3 | 5.9 s | 94 KB | 1,040 ms | ~4,890 ms | TLS cached |
-| 4 | 4.2 s | 67 KB | 1,010 ms | ~4,840 ms | TLS cached |
-
-> **Comparativo com 16kHz (sessão Mar 18):** interações similares de ~4s tinham payload ~131KB e API total ~7.9s. A redução para 8kHz resultou em ganho médio de **~3s** no tempo total de resposta.
-
-**Observações técnicas:**
-- ✅ **8kHz confirmado** em todos os chunks: `Audio captured: 8000 Hz, 16-bit, 1 ch, 100 ms, 1600 bytes`
-- ✅ **HPF fs atualizado**: `HPF applied: 100 Hz cutoff @ 8kHz` — filtro re-parametrizado corretamente
-- ✅ **WAV header correto**: header WAV gravado com `sample_rate=8000` — áudio reproduzível sem corrução
-- ✅ **SD Card**: áudios salvos com tamanho correto (~67–94 KB vs ~118–131 KB na sessão 16kHz)
-- ✅ **3 interações + 1 curta cancelada** sem crash, sem leak de memória
-- ✅ **Deep sleep** ao fim da sessão: SD desmontado corretamente; wake-up funcional
-
-### Deep Sleep
-
-```
-I (103619) app: Deep sleep warning: 10s remaining
-I (113619) app: Inactivity timeout reached, preparing deep sleep...
-I (115119) bsp_sleep: Entering Deep Sleep Mode...
-I (115119) bsp_sd: SD card unmounted
-W (115139) bsp_sleep: Button is already LOW (pressed?). Waiting for release...
-I (120289) bsp_sleep: Button released, proceeding to sleep.
-```
-> Suspensão após ~45s de inatividade. SD desmontado com segurança. Wake-up via botão físico confirmado.
+> ⚠️ `W i2c: This driver is an old driver` — API legada do CST816S, sem impacto funcional.  
+> ⚠️ `W i2s_common: dma frame num limited to 511` — ajuste automático do driver I2S a 8kHz, informativo.  
+> ⚠️ `E spi: SPI bus already initialized` — compartilhamento SPI2 entre LCD e SD, tratado corretamente.
 
 ---
 
-### Interaction 1 — Long recording (9 s, 288 KB captured)
+## 🎙️ Interaction Flow — Push-to-Talk com RMS Monitoring
 
+O sistema usa **Push-to-Talk (PTT)** como controle exclusivo de gravação. Todos os chunks de 100ms são capturados integralmente; o RMS de cada janela é exibido para monitoramento. Após a captura, um **HPF de 100 Hz** é aplicado in-place no buffer PCM antes do envio à API.
+
+**Padrão de RMS observado:**
+- Silêncio / ruído ambiente: 500–1,400
+- Fala normal: 4,000–14,000
+- Fala intensa / pico: 15,000–22,000
+
+---
+
+## 📅 Session Log — March 28, 2026
+
+### Session 1 — Boot + Interaction (PTT 8.0 s / 128 KB)
 
 ```
-I (7649) app: button pressed -> start recording
-I (7649) app: starting interaction in audio mode
-I (7649) app: [RMS] Window: 869.45 (Total: 3200 bytes)
-I (7669) app: [RMS] Window: 740.21 (Total: 6400 bytes)
+I (8199) bsp: GPIO 18 changed from 0 to 1           ← botão pressionado
+I (8239) app: button pressed -> start recording
+I (8239) bsp: Audio captured: 8000 Hz, 16-bit, 1 ch, 100 ms, 1600 bytes
+I (8529) app: [RMS] Window: 17038.85 (Total: 16000 bytes)   ← pico de fala clara
 ...
-I (8789) app: [RMS] Window: 9046.54 (Total: 48000 bytes)
-I (13009) app: [RMS] Window: 13536.93 (Total: 182400 bytes)
-...
-I (16299) app: Button released -> stopping recording
-I (16349) app: HPF applied: 100 Hz cutoff, 144000 samples
-I (16589) app: Audio-only path initiated
-I (16709) app: HTTP client initialized: https://api.openai.com/v1/chat/completions
-I (18749) esp-x509-crt-bundle: Certificate validated
-W (32449) app_storage: Audio too large (288000 bytes, max 262144), truncating
-I (32469) app_storage: Audio queued in PSRAM (262144 bytes, queue: 1/2)
-I (32679) app_storage: Chat log appended: /sdcard/logs/chat/C0319.TXT (567 bytes)
-I (32699) app: interaction finished (captured=288000 bytes, ms=9000)
-I (34119) app_storage: Audio saved: /sdcard/media/audio/R011848.WAV (262144 bytes PCM -> 262188 bytes WAV)
-I (34119) app_storage: Batch save complete (SD kept mounted): 1 saved, 0 failed
+I (15559) bsp: GPIO 18 changed from 1 to 0          ← botão liberado
+I (15569) app: Button released -> stopping recording
+I (15589) app: HPF applied: 100 Hz cutoff @ 8kHz, 64000 samples
+I (15699) app: Audio-only path initiated
+I (15759) app: HTTP client initialized: https://api.openai.com/v1/chat/completions
+I (16739) esp-x509-crt-bundle: Certificate validated         ← TLS: 980 ms
+I (20479) app_storage: Audio queued in PSRAM (128000 bytes, queue: 1/2)
+I (20819) app: interaction finished (captured=128000 bytes, ms=8000)
+I (21469) app_storage: Audio saved: /sdcard/media/audio/R155838.WAV (128044 bytes WAV)
+I (21469) app_storage: Batch save complete (SD kept mounted): 1 saved, 0 failed
 ```
 
-### Interaction 2 — Typical recording (3.7 s, 118 KB captured)
+**Timing — Interaction 1:**
+
+| Phase | Duration |
+|---|---|
+| Recording (PTT) | **8,000 ms** |
+| HPF + setup | ~170 ms |
+| TLS handshake | **980 ms** |
+| Upload + inference + stream | ~3,740 ms |
+| **Total (release → finished)** | **~5,260 ms** |
+
+**Storage:**
+- Heap: Total ~7.54 MB, Internal ~101 KB, Largest DMA 31 KB ✅
+- Chat log: `/sdcard/logs/chat/C0328.TXT` (482 bytes)
+- WAV: `R155838.WAV` — 128,044 bytes (PCM 128,000 → WAV 128,044)
+
+### Deep Sleep 1 — Shutdown Sequence
 
 ```
-I (43029) app: button pressed -> start recording
-I (43029) app: starting interaction in audio mode
-I (43039) app: [RMS] Window: 469.76 (Total: 3200 bytes)
-I (43379) app: [RMS] Window: 6138.12 (Total: 22400 bytes)
-...
-I (46379) app: [RMS] Window: 1249.46 (Total: 118400 bytes)
-I (46389) app: Button released -> stopping recording
-I (46409) app: HPF applied: 100 Hz cutoff, 59200 samples
-I (46509) app: Audio-only path initiated
-I (47949) esp-x509-crt-bundle: Certificate validated
-I (53829) app_storage: Audio queued in PSRAM (118400 bytes, queue: 1/2)
-I (53949) app_storage: Chat log appended: /sdcard/logs/chat/C0319.TXT (480 bytes)
-I (53949) app: interaction finished (captured=118400 bytes, ms=3700)
-I (54689) app_storage: Audio saved: /sdcard/media/audio/R011909.WAV (118400 bytes PCM -> 118444 bytes WAV)
-I (54689) app_storage: Batch save complete (SD kept mounted): 1 saved, 0 failed
+I (71939) app: Deep sleep warning: 10s remaining
+I (81939) app: Inactivity timeout reached, preparing deep sleep...
+I (83439) bsp_sleep: Entering Deep Sleep Mode...
+I (83439) bsp_sleep: LVGL task deleted (Core 1 freed)        ← evita Task WDT
+I (83439) bsp_sleep: LVGL tick timer stopped                 ← 500 IRQs/s eliminados
+I (83439) bsp_sleep: Backlight GPIO1 forced LOW and held     ← gpio_hold_en()
+I (83449) bsp_sleep: I2S channel stopped and deleted
+I (83449) bsp_sleep: SNTP stopped
+I (83449) wifi:state: run -> init (0x0)
+I (83459) wifi:pm stop, total sleep time: 72204308 us / 81930905 us   ← 88.1% PS
+I (83519) bsp_sleep: WiFi stopped and deinitialized
+I (83519) bsp_sleep: I2C driver deleted
+I (83519) bsp_sd: SD card unmounted
+E (83519) spi_master: not all CSses freed                    ← cosmético: LCD io_handle
+I (83519) bsp_sleep: SPI bus freed
+W (83549) bsp_sleep: Botao pressionado. Aguardando soltar...
+I (91749) bsp_sleep: Botao solto. Entrando em sleep.
+I (91749) bsp_sleep: Todos perifericos desligados. Entrando em Deep Sleep.
 ```
 
-### Interaction 3 — Typical recording (4.1 s, 131 KB captured)
+**WiFi modem-sleep ratio sessão 1:** `72,204,308 µs / 81,930,905 µs` = **88.1%**
+
+**Sequência de shutdown — 9 passos:**
+
+| # | Periférico | Ação | Resultado |
+|---|---|---|---|
+| 1 | LVGL Task (Core 1) | `vTaskDelete()` | Core 1 liberado — sem Task WDT |
+| 2 | LVGL tick timer | `esp_timer_stop()` | 500 IRQs/s eliminados |
+| 3 | Backlight GPIO1 | `gpio_set_level(0)` + `gpio_hold_en()` | Backlight apagado e travado |
+| 4 | I2S / INMP441 | `channel_disable` + `channel_del` | GPIOs BCLK/WS/SD flutuando |
+| 5 | SNTP | `esp_sntp_stop()` | Stack NTP parado |
+| 6 | WiFi | `esp_wifi_stop()` + `esp_wifi_deinit()` | Rádio RF desligado |
+| 7 | I2C / CST816S | `i2c_driver_delete()` | SDA/SCL sem pull-up drain |
+| 8 | SD Card | `vfs_fat_sdspi_unmount()` | Filesystem desmontado com segurança |
+| 9 | SPI bus | `spi_bus_free()` | Barramento liberado |
+
+---
+
+### Session 2 — Wakeup 1 + Profile Switching + Interaction (PTT 2.5 s / 40 KB)
+
+**Boot após wakeup:**
+```
+I (1515) wifi:connected with MyNetHome, aid=5, ch5, rssi: -62   ← sem retry
+I (2595) bsp: Wi-Fi connected, got IP: 192.168.0.184            ← ~1.5 s
+I (2595) bsp: Wi-Fi Power Save: WIFI_PS_MIN_MODEM enabled
+```
+
+**Profile switching — 4 ciclos, todos persistidos:**
 
 ```
-I (64069) app: button pressed -> start recording
-I (64069) app: starting interaction in audio mode
-I (64079) app: [RMS] Window: 726.59 (Total: 3200 bytes)
-I (64589) app: [RMS] Window: 4948.63 (Total: 28800 bytes)
-...
-I (67809) app: [RMS] Window: 2105.57 (Total: 131200 bytes)
-I (67819) app: Button released -> stopping recording
-I (67839) app: HPF applied: 100 Hz cutoff, 65600 samples
-I (67959) app: Audio-only path initiated
-I (69079) esp-x509-crt-bundle: Certificate validated
-I (75939) app_storage: Audio queued in PSRAM (131200 bytes, queue: 1/2)
-I (76099) app_storage: Chat log appended: /sdcard/logs/chat/C0319.TXT (778 bytes)
-I (76099) app: interaction finished (captured=131200 bytes, ms=4100)
-I (76879) app_storage: Audio saved: /sdcard/media/audio/R011931.WAV (131200 bytes PCM -> 131244 bytes WAV)
-I (76879) app_storage: Batch save complete (SD kept mounted): 1 saved, 0 failed
+I (5075)  app: Profile changed to: 1 (Agronomo)
+I (5115)  config_mgr: Config saved to /sdcard/data/config.txt (3142 bytes, 4 perfis)  ← ~40ms
+I (6565)  app: Profile changed to: 2 (Teacher)    → saved ~40ms
+I (9145)  app: Profile changed to: 3 (Digital)    → saved ~40ms
+I (11655) app: Profile changed to: 0 (Generalista) → saved ~40ms
 ```
 
-**Observations:**
-- **Full capture**: All audio is retained (silence + speech). The decision is left to the AI model.
-- **RMS Monitoring**: Typical values: silence ~300-870, speech ~1500-6400, loud voice peaks ~9000-13500.
-- **HPF**: Applied after complete capture, before WAV conversion — negligible processing time (~40 ms for 144K samples).
-- **TLS**: X.509 certificate validated in ~2.0 s on first connection; ~1.4 s on 2nd; ~1.1 s on 3rd (session reuse).
-- **Truncation protection**: Recordings exceeding 262,144 bytes (256 KB) are safely truncated with a warning log — no crash or data corruption.
-- **3 consecutive interactions** in the same session without memory leaks or instability.
+**Interaction:**
+```
+I (19865) app: button pressed -> start recording
+I (21705) app: Button released -> stopping recording
+I (21715) app: HPF applied: 100 Hz cutoff @ 8kHz, 20000 samples
+I (22805) esp-x509-crt-bundle: Certificate validated        ← TLS: 1,030 ms
+I (25115) app_storage: Audio queued in PSRAM (40000 bytes, queue: 1/2)
+I (25365) app: interaction finished (captured=40000 bytes, ms=2500)
+I (25655) app_storage: Audio saved: /sdcard/media/audio/R160327.WAV (40044 bytes WAV)
+```
+
+**Timing — Interaction 2:**
+
+| Phase | Duration |
+|---|---|
+| Recording (PTT) | **2,500 ms** |
+| HPF + setup | ~60 ms |
+| TLS handshake | **1,030 ms** |
+| Upload + inference + stream | ~2,290 ms |
+| **Total (release → finished)** | **~3,660 ms** |
+
+### Deep Sleep 2 — Idle (sem interação)
+
+```
+I (47985) wifi:pm stop, total sleep time: 41477007 us / 46462092 us   ← 89.3% PS
+...sequência completa de 9 passos...
+I (192175) bsp_sleep: Botao solto. Entrando em sleep.   ← botão segurado ~144s
+```
+
+**WiFi modem-sleep ratio sessão 2:** `41,477,007 µs / 46,462,092 µs` = **89.3%**
+
+---
+
+### Session 3 — Wakeup 2 + Idle
+
+```
+I (1525) wifi:connected with MyNetHome, aid=5, ch5, rssi: -59   ← sem retry
+I (3095) bsp: Wi-Fi connected, got IP: 192.168.0.184            ← ~1.6 s
+I (3095) bsp: Wi-Fi Power Save: WIFI_PS_MIN_MODEM enabled
+```
+
+### Deep Sleep 3 — Idle (60s timeout)
+
+```
+I (71685) wifi:pm stop, total sleep time: 61103219 us / 70148142 us   ← 87.1% PS
+I (71665) bsp_sleep: LVGL task deleted (Core 1 freed)
+I (71665) bsp_sleep: Backlight GPIO1 forced LOW and held
+...shutdown completo...
+I (74585) bsp_sleep: Todos perifericos desligados. Entrando em Deep Sleep.
+```
+
+**WiFi modem-sleep ratio sessão 3:** `61,103,219 µs / 70,148,142 µs` = **87.1%**
+
+---
+
+### Session 4 — Wakeup 3 (em andamento)
+
+```
+I (1525) wifi:connected with MyNetHome, aid=5, ch5, rssi:-63    ← sem retry
+I (3095) bsp: Wi-Fi connected, got IP: 192.168.0.184            ← ~1.6 s
+I (3095) bsp: Wi-Fi Power Save: WIFI_PS_MIN_MODEM enabled
+I (36465) app: Deep sleep warning: 10s remaining                ← 4º ciclo a caminho
+```
+
+---
+
+## 📊 Resumo Multi-Ciclo — 3 Deep Sleep Cycles (28/03/2026)
+
+| Ciclo | Contexto | WiFi PS ratio | WiFi reconnect | Shutdown |
+|---|---|---|---|---|
+| 1 | PTT 8s interaction | **88.1%** | ~1.5 s | ✅ limpo |
+| 2 | Idle + profile switch + PTT 2.5s | **89.3%** | ~1.5 s | ✅ limpo |
+| 3 | Idle 60s timeout | **87.1%** | ~1.6 s | ✅ limpo |
+| **Média** | — | **88.2%** | **~1.55 s** | 3/3 ✅ |
+
+**Observações:**
+- ✅ Zero crashes em 3 ciclos completos de sleep → wakeup → operação → sleep
+- ✅ Zero Task WDT — LVGL task deletada antes do sleep em todos os ciclos
+- ✅ Zero race conditions WiFi — flag `s_wifi_shutting_down` efetiva
+- ✅ Backlight apagado em todos os sleeps, acendeu em todos os wakeups
+- ✅ SD Card desmontado e remontado corretamente em cada ciclo
+- ✅ Profile switching: 4 trocas × ~40ms, config.txt 3142 bytes, zero falhas de escrita
+- ✅ Heap estável: Total ~7.5–7.6 MB, Internal ~100–102 KB ao longo de todos os ciclos
+- ⚠️ `E spi_master: not all CSses freed` — cosmético em todos os shutdowns (LCD io_handle não deletado)
+
+---
+
+## 💾 Storage Subsystem (Opportunistic Saving)
+
+```
+I (20479) app_storage: Audio queued in PSRAM (128000 bytes, queue: 1/2)
+W (20479) app_storage: Audio queue almost full, triggering immediate save
+I (20489) app_storage: Memory before SD mount: Total=7543896, Internal=101759, Largest=31744
+I (20499) app_storage: DMA memory diagnostic: LargestDMA=31744 bytes (need 24576) ✅
+I (20519) app_storage: SD card already mounted, proceeding to save
+I (20619) app_storage: Chat log appended: /sdcard/logs/chat/C0328.TXT (482 bytes)
+I (21469) app_storage: Audio saved: /sdcard/media/audio/R155838.WAV (128044 bytes WAV)
+I (21469) app_storage: Batch save complete (SD kept mounted): 1 saved, 0 failed
+```
+
+- **PSRAM queue**: capacidade 2; save preemptivo ao atingir threshold
+- **DMA check**: verifica 24,576 bytes disponíveis antes de operar o SD (medido: 31,744 bytes)
+- **SD kept mounted**: sem overhead de mount/unmount entre saves
+- **WAV header**: gerado com `sample_rate=8000` — reproduzível diretamente
+
+---
+
+## 🔋 Consumo de Corrente — Comparativo
+
+| Cenário | Corrente estimada | Status |
+|---|---|---|
+| Antes das otimizações (WiFi+I2S+I2C ativos) | ~5–10 mA | baseline |
+| Backlight flutuando HIGH durante sleep (bug) | ~30 mA | corrigido |
+| **Solução completa (28/03/2026)** | **~0.1 mA** | ⏳ validação com multímetro pendente |
+
+> ⚠️ **Estimativas de tempo de bateria não incluídas** — valores dependem de medição real de corrente com multímetro de precisão em hardware.
+
+**WiFi modem-sleep durante operação ativa:** 87–89% medido diretamente nos logs.
+
+---
+
+## 🔊 High-Pass Filter (HPF)
+
+Filtro IIR Butterworth 1ª ordem aplicado in-place no buffer PCM após captura completa, antes do envio à API.
+
+| Parâmetro | Valor |
+|---|---|
+| Tipo | IIR Butterworth 1ª ordem |
+| Frequência de corte | 100 Hz |
+| Rolloff | −6 dB/oitava |
+| Sample rate | 8,000 Hz |
+| Custo computacional | ~2 mult + 2 add por amostra |
+| Alocação extra | Nenhuma (in-place) |
 
 ---
 
 ## 🧩 Dynamic Specialist Profiles
 
-Profiles are stored as a JSON array in `/sdcard/data/config.txt` and loaded at boot. Up to **6 profiles** can be configured via the Captive Portal. The active profile can be cycled in real-time using the touch button — each switch is immediately persisted to the SD card.
-
-```
-I (116479) app: Profile changed to: 0 (Generalista)
-I (116509) app_storage: Directory structure verified
-I (116519) config_mgr: Opening config file for writing: /sdcard/data/config.txt
-I (116549) config_mgr: Config saved to /sdcard/data/config.txt (3140 bytes, 4 perfis)
-
-I (117269) app: Profile changed to: 1 (Agronomo)
-I (117339) config_mgr: Config saved to /sdcard/data/config.txt (3140 bytes, 4 perfis)
-
-I (119409) app: Profile changed to: 2 (Teacher)
-I (119479) config_mgr: Config saved to /sdcard/data/config.txt (3140 bytes, 4 perfis)
-
-I (121549) app: Profile changed to: 3 (Digital)
-I (121619) config_mgr: Config saved to /sdcard/data/config.txt (3140 bytes, 4 perfis)
-
-I (123209) app: Profile changed to: 0 (Generalista)
-I (123279) config_mgr: Config saved to /sdcard/data/config.txt (3140 bytes, 4 perfis)
-```
-
-**Profile configuration** (4 active profiles in this session):
+Profiles armazenados em `/sdcard/data/config.txt` (3142 bytes, JSON array). Até **6 profiles** via Captive Portal. Troca em tempo real com persistência imediata no SD.
 
 | Index | Name | Scope |
 |---|---|---|
@@ -299,158 +334,39 @@ I (123279) config_mgr: Config saved to /sdcard/data/config.txt (3140 bytes, 4 pe
 | 2 | Teacher | Digital Electronics — UnB FGA (Prof. Marcelino) |
 | 3 | Digital | Digital Electronics scope-restricted |
 
-**Technical notes:**
-- Profile struct: `name[32]`, `prompt[512]`, `terms[256]` — all bounds-checked via `strlcpy`.
-- System message buffer sized at **1536 bytes** to accommodate max personality (255) + max prompt (511) + fixed text (~431) without truncation.
-- SSE streaming context (`app_sse_ctx_t`, ~4613 bytes) allocated on **heap** to avoid stack pressure on the 10 KB `app_task` stack.
-- Config file grew from 2850 to **3140 bytes** after profiles were updated via the Captive Portal — 5 full cycles through all 4 profiles with zero save failures.
+**Ciclo completo de 4 trocas nesta sessão: zero falhas, todos persistidos em ~30–40 ms.**
 
 ---
 
-## 💾 Storage Subsystem (Opportunistic Saving)
+## 🌐 Captive Portal
 
-```
-I (32469) app_storage: Audio queued in PSRAM (262144 bytes, queue: 1/2)
-W (32469) app_storage: Audio queue almost full, triggering immediate save
-I (32479) app_storage: Queue almost full (1/2), saving immediately
-I (32489) app_storage: Memory before SD mount: Total=7400856, Internal=91839, Largest=31744, LargestDMA=31744
-I (32509) app_storage: Sufficient DMA memory available: 31744 bytes (need 24576)
-I (32519) app_storage: SD card already mounted, proceeding to save
-I (32679) app_storage: Chat log appended: /sdcard/logs/chat/C0319.TXT (567 bytes)
-I (34119) app_storage: Audio saved: /sdcard/media/audio/R011848.WAV (262144 bytes PCM -> 262188 bytes WAV)
-I (34119) app_storage: Batch save complete (SD kept mounted): 1 saved, 0 failed
-I (34119) app_storage: Storage queue flush finished
-```
-
-**Observations:**
-- **PSRAM queue**: The system monitors the PSRAM queue (capacity 2) and preemptively offloads when the safety threshold is reached.
-- **DMA Check**: Performs a free internal memory check before starting heavy SD operations — requires 24,576 bytes DMA available (measured: 31,744 bytes).
-- **Heap telemetry**: Total heap ~7.4 MB, Internal ~92 KB, Largest DMA block ~31 KB — healthy margins throughout the session.
-- **Truncation protection**: Audio exceeding 262,144 bytes is safely truncated (`Audio too large (288000 bytes, max 262144), truncating`).
-- **Config persistence**: Profile switches write 3140 bytes to SD in ~70 ms (dir verify + fwrite + fsync).
-- **SD kept mounted**: After the first mount, the SD card remains mounted for subsequent saves — eliminating repeated mount/unmount overhead.
-
----
-
-## 💤 Low-Power Management (Deep Sleep)
-
-### First deep sleep cycle
-
-```
-I (158209) app: Deep sleep warning: 10s remaining
-I (168209) app: Inactivity timeout reached, preparing deep sleep...
-I (169709) bsp_sleep: Entering Deep Sleep Mode...
-I (169709) bsp_sd: SD card unmounted
-W (169729) bsp_sleep: Button is already LOW (pressed?). Waiting for release...
-I (295579) bsp_sleep: Button released, proceeding to sleep.
-```
-
-### Wake-up and re-boot
-
-```
-I (1005) bsp: Init BSP
-I (1125) bsp: I2S mic init ok (BCLK=16 WS=17 SD=21)
-I (1275) bsp_battery: Battery ADC initialized
-I (1395) bsp_sd: SD card mounted at /sdcard
-I (1425) config_mgr: Config loaded: SSID='SanLino' profiles=4 volume=70 brightness=85
-I (1425) app: Dynamic config loaded from SD card
-I (1465) main: assistant_esp32 started
-W (1665) bsp: Wi-Fi reconnect attempt 1/8
-W (4085) bsp: Wi-Fi reconnect attempt 2/8
-I (4335) wifi:connected with SanLino, aid = 2, channel 6, BW20
-I (4335) wifi:security: WPA2-PSK, phy: bgn, rssi: -15
-I (5645) bsp: Wi-Fi connected, got IP: 10.222.248.51
-```
-
-### Second deep sleep cycle (idle — no interactions after wake)
-
-```
-I (36455) app: Deep sleep warning: 10s remaining
-I (46455) app: Inactivity timeout reached, preparing deep sleep...
-I (47955) bsp_sleep: Entering Deep Sleep Mode...
-I (47955) bsp_sd: SD card unmounted
-W (47975) bsp_sleep: Button is already LOW (pressed?). Waiting for release...
-```
-
-**Observations:**
-- **Safe Shutdown**: The SD card is safely unmounted before suspension — verified in both sleep cycles.
-- **Hardware Trigger**: The system waits for GPIO 18 (button) release to avoid infinite bootloops.
-- **Wake Recovery**: After deep sleep wake-up, full boot completes in ~1.5 s and config is reloaded from SD (`profiles=4`, `volume=70`, `brightness=85`) — all settings preserved.
-- **Wi-Fi reconnection**: Consistent 2-retry pattern on both boots — first auth attempt times out, second succeeds.
-- **RSSI improvement after wake**: First boot RSSI -43 dBm, second boot -15 dBm — normal Wi-Fi variance.
-- **Idle timeout**: 45 s inactivity triggers deep sleep; the second cycle entered sleep at ~47 s after wake (no user interaction).
-
----
-
-## 🌐 Captive Portal — Double-Hold Activation
-
-```
-W (27947) app: Config portal triggered by double-hold!
-I (27947) captive_portal: === Entering Configuration Mode (Captive Portal) ===
-I (28537) esp_netif_lwip: DHCP server started on interface WIFI_AP_DEF with IP: 192.168.4.1
-I (29537) captive_portal: DNS server task started (port 53)
-I (29537) captive_portal: HTTP server started on port 80
-```
-
-**Observations:**
-- **Accessibility**: Portal available at `192.168.4.1` with automatic DNS redirect (Android, iOS, Windows).
-- **Configuration**: Allows adjustment of Wi-Fi, AI personality, model, base URL, and **1–6 specialist profiles** dynamically.
-- **HTML Safety**: All config field values are HTML-attribute-escaped before rendering — prevents form corruption from special characters in SSID, token, or profile prompts.
-- **Single save**: All fields updated in memory first, then `config_manager_save()` called once — prevents partial writes.
-- **Stack safety**: `httpd` task stack set to **12288 bytes**; profile array allocated on heap.
-- **POST body integrity**: `httpd_req_recv` loops until all data is received — prevents truncation of large profile configurations.
-- **URL-decode buffer**: Sized at 2048 bytes to support prompts up to 511 chars with full `%XX` UTF-8 encoding (worst case: 511 × 3 = 1533 bytes encoded).
-
----
-
-## 🔊 High-Pass Filter (HPF) — Intelligibility Improvement
-
-A 1st-order IIR Butterworth digital filter with a cutoff frequency of **100 Hz** was implemented, applied in-place on the PCM buffer after complete capture and before WAV conversion.
-
-| Parameter | Value |
-|---|---|
-| Type | 1st-order IIR Butterworth |
-| Cutoff frequency | 100 Hz |
-| Rolloff | -6 dB/octave |
-| Latency | 1 sample (62.5 µs at 16 kHz) |
-| Computational cost | ~2 mult + 2 add per sample |
-| Extra allocation | None (in-place processing) |
-| Measured processing time | ~40 ms for 144,000 samples |
-
-**Technical justification:**
-- Removes electrical hum (50/60 Hz + harmonics), MEMS microphone rumble, and mechanical vibrations.
-- The lowest male voice fundamental (~85 Hz) suffers minimal attenuation (-6 dB/octave gentle rolloff).
-- Essential formants for intelligibility are above 300 Hz — fully preserved.
-- Compatible with STT APIs standard (Whisper, GPT-4o Audio).
-
-**Result**: AI rated audio quality at **7-8/10** — satisfactory for transcription and contextual response.
-
----
-
-## 🔋 Battery Telemetry and Monitoring
-
-The S3 Lite performs continuous reading via ADC_UNIT_1:
-- **Pin**: GPIO 4
-- **Calibration**: Uses the chip's native calibration curve via BSP (`ADC Calibration Success`).
-- **UI Status**: Real-time update on the LVGL display Status Bar via SPI bus.
+- Portal disponível em `192.168.4.1` com redirect DNS automático (Android, iOS, Windows)
+- Configura: Wi-Fi, personalidade IA, modelo, URL base e 1–6 profiles especializados
+- Escaping HTML em todos os campos (previne corrupção de SSID/token/prompt)
+- `httpd` task stack: 12288 bytes; array de profiles alocado na heap
+- Buffer URL-decode: 2048 bytes (suporta prompts até 511 chars com UTF-8 `%XX`)
 
 ---
 
 ## ✅ Operational Conclusion
 
-The S3 Lite firmware demonstrated across **3 audio interactions**, **5 profile switches**, and **2 deep sleep/wake cycles**:
-- ✅ **Instant boot** (~1.5s) without additional calibrations.
-- ✅ **Wi-Fi reconnection** in ~4.3 s (consistent 2-retry pattern across both boots).
-- ✅ **Direct audio capture** with informational per-window RMS monitoring.
-- ✅ **100 Hz HPF** — IIR Butterworth with zero delay, measurable intelligibility improvement (7-8/10).
-- ✅ **Robust Push-to-Talk** with 1s lockout and 150ms debounce.
-- ✅ **Reliable persistence** with preemptive SD Card saving and audio truncation protection.
-- ✅ **Efficient power management** with safe FileSystem shutdown and full state recovery on wake.
-- ✅ **Dynamic specialist profiles** (1–6) — configurable via Captive Portal, persisted to SD, cycled in real-time via touch button.
-- ✅ **Production-grade memory safety** — heap allocation for large buffers, HTML escaping, correct system message sizing, DMA checks before SD operations.
-- ✅ **TLS session reuse** — certificate validation improves from ~2.0 s to ~1.1 s across consecutive API calls.
-- ✅ **No memory leaks** — heap telemetry stable across 3 interactions (Total: ~7.4 MB, Internal: ~92–102 KB).
+Firmware validado com **2 interações de áudio**, **4 trocas de perfil**, e **3 ciclos completos de deep sleep/wakeup** na sessão de 28/03/2026:
+
+- ✅ **Boot ~1.5 s** sem calibrações adicionais
+- ✅ **WiFi reconexão ~1.5–1.6 s** direto, sem retry — consistente nos 3 wakeups
+- ✅ **Captura PTT** com monitoramento RMS por janela de 100ms
+- ✅ **HPF 100 Hz IIR Butterworth** aplicado sem alocação extra
+- ✅ **TLS ~980–1,030 ms** por sessão — sem reutilização entre boots (cold start)
+- ✅ **Persistência SD confiável** — saving preemptivo, DMA check, SD kept mounted
+- ✅ **Shutdown de 9 periféricos em ordem** — zero WDT, zero race conditions, 3/3 ciclos
+- ✅ **Backlight OFF no sleep** (`gpio_hold_en`) | **ON no wakeup** (`gpio_hold_dis`)
+- ✅ **WiFi modem-sleep 87–89%** medido diretamente nos logs de 3 sessões
+- ✅ **Redução de corrente estimada ~50–100x** vs. baseline — medição hardware pendente
+- ✅ **PM + Tickless Idle + DFS** ativos — escalonamento dinâmico de frequência
+- ✅ **Profiles dinâmicos** (1–6) — persistidos em ~30–40 ms, zero falhas
+- ✅ **Heap estável** ao longo de todos os ciclos (Total: ~7.5–7.6 MB, Internal: ~100–102 KB)
+- ⚠️ `E spi_master: not all CSses freed` — cosmético, LCD io_handle não deletado antes de `spi_bus_free()`
 
 ---
 
-*Log collected via `idf.py -p COM15 flash monitor` — session 03/18/2026 (build 19:43:53).*
+*Log collected via `idf.py -p COM15 monitor` — session 03/28/2026 (build 12:23:52).*
