@@ -1,567 +1,165 @@
 <div align="center">
 
-# 🤖 ESP32 AI Assistant
+# ExpertOnDevice-AI
 
-### *Turn a microcontroller into an AI Assistant with Camera Vision — Edge Capture, No Mandatory Subscriptions, 100% Private via Local Gateway.*
+### A microcontroller that captures voice (and, on the P4, a photo), applies a specialist profile, and asks an LLM. The model is not on the chip.
 
 [![License: Non-Commercial](https://img.shields.io/badge/License-Non--Commercial%20Free-blue.svg)](LICENSE)
 [![Commercial License](https://img.shields.io/badge/Commercial%20License-Request-brightgreen.svg)](mailto:mrclnndrd@gmail.com)
 [![ESP-IDF](https://img.shields.io/badge/ESP--IDF-v5.5.1-red.svg)](https://github.com/espressif/esp-idf)
-[![LLM](https://img.shields.io/badge/LLM-OpenAI%20%7C%20Groq%20%7C%20Ollama%20%7C%20Any%20OpenAI--Compatible-purple.svg)]()
+[![LLM](https://img.shields.io/badge/LLM-OpenAI--compatible-purple.svg)]()
 [![Platform](https://img.shields.io/badge/Platform-ESP32--S3%20%7C%20ESP32--P4-orange.svg)]()
-[![Made in Brazil](https://img.shields.io/badge/Made%20in-Brazil%20🇧🇷-green.svg)]()
-
----
-
-> **"A portable AI assistant with a camera — and you can build one today."**
-
+[![Made in Brazil](https://img.shields.io/badge/Made%20in-Brazil-green.svg)]()
 
 <video src="https://github.com/user-attachments/assets/cf833a62-3809-4c02-ae4d-6812c46d103d" controls width="720">
-  <a href="https://github.com/user-attachments/assets/cf833a62-3809-4c02-ae4d-6812c46d103d">▶ Watch video demo</a>
+  <a href="https://github.com/user-attachments/assets/cf833a62-3809-4c02-ae4d-6812c46d103d">Watch demo</a>
 </video>
 
 </div>
 
----
+This is **edge orchestration**, not an on-device LLM. The ESP32 holds the microphone, display, battery policy, SD audit trail, and the expert persona. Inference runs on whatever OpenAI-compatible endpoint you put in the Captive Portal — a public API today, or a machine on your LAN tomorrow. No firmware rewrite either way.
 
-## 🚀 "Expert-on-Device" Platform: Data Sovereignty and Strategic Differentiators
+It exists for places where a phone is the wrong tool: dirty hands, factory floors, field work, objects that should answer as themselves. It is not a consumer AI pin, and it does not replace ChatGPT in your pocket.
 
-> **"Not a toy. A Sovereign AI Infrastructure for the Real World."**
-
-More than a simple "AI assistant", this is a **multimodal, configurable, and sovereign platform for professional applications**, designed for scale deployment and multiple monetization models.
-
-- **🛡️ Radical Data Sovereignty:** Your data never touches the cloud without your permission. Through a Private Gateway (Ollama/LiteLLM), you can process everything locally, eliminating dependence on public clouds and ensuring total privacy.
-- **👁️ Native Auditing:** Absolute transparency. All audio, image, and response data is natively logged to the SD Card. In industrial or healthcare environments, every AI decision is recorded for statutory and institutional compliance.
-- **🧠 Total Agnosticism:** No Vendor Lock-in. Swap brains (GPT-4o, Llama 3, Groq, Gemini) via Web Portal without recompiling a single line of C code.
-- **💼 Domain Expertise (B2B):** Move beyond generic AI. From Agronomist to Engineer, the hardware assumes the desired technical persona through profiles embedded on the SD Card, reducing hallucinations from non-specialized models.
-- **💸 Cost-Effective Hardware (< US$33)**: Based on ESP32-S3 (Lite) and P4 (Pro), ensuring extremely low CAPEX, enabling large-scale sales to industrial fleets, schools, and hospitals.
-- **🧩 Ecosystem and Licensing**: Modular firmware ready for OEM agreements. Enables recurring revenue by selling "expert profiles as a service" far beyond simple hardware sales.
+The four pillars are in the [Manifesto](Manifesto.md). Short version: **sovereignty is optional (gateway on your network), auditing is native (SD card), the brain is swappable, the persona lives on the device.**
 
 ---
 
-## 🎯 Comparison with Market Solutions
+## Two kits, one idea
 
-| | ✅ ESP32 AI Assistant | ❌ Typical Solutions |
+| | **S3 Lite** — pocket / battery | **P4-EYE Pro** — vision / desk |
 |---|---|---|
-| 💰 Hardware cost | **~US$20-35 (S3)** or **~US$33 (P4-EYE)** | US$200 to US$2,000+ |
-| 🌐 Own server | **Optional (supports on-premise)** | Required |
-| 🤖 AI Model | **Provider-agnostic (supports cloud or own LLM)** | Locked to 1 vendor |
-| 📷 Computer Vision | **S3: optional external camera / P4: integrated 2MP** | Limited or cloud-dependent |
-| 🎙️ Voice Processing | **Edge capture & orchestration** (Inference via API/Gateway) | Cloud required |
-| 🔐 **Data Privacy** | **100% Private (via local Gateway B)** | Data on third-party servers |
-| 🔋 Power consumption | **Ultra low (S3 Lite)** | High |
-| 👕 **Wearable** | **✅ S3 Lite version** is optimized for this | ❌ Rare / dependent on proprietary ecosystem |
-| 📦 Size | **Smaller than a deck of cards** | Desktop or server |
-
----
-
-## 🔓 Open Architecture — LLM Agnostic
-
-The firmware uses the **OpenAI Chat Completions API with `input_audio`** as its wire protocol — a standard adopted by the major providers. All credentials and endpoints are configured dynamically via **Captive Portal or SD card** — no recompilation required.
-
-> ⚠️ **Tested with:** Only **OpenAI** models (`gpt-4o-audio-preview` and `gpt-4o-mini-audio-preview`) have been validated end-to-end on real hardware. The other providers in the table are architecturally compatible but **have not been tested yet** — contributions welcome (see Contributing section).
-
-| Provider | Example Model | Status |
-|---|---|---|
-| **OpenAI** | `gpt-4o-audio-preview` | ✅ Tested & validated |
-| **OpenAI** | `gpt-4o-mini-audio-preview` | ✅ Tested & validated  |
-| **Groq** | `whisper-large-v3-turbo` | 🔬 Architecturally compatible, not yet tested |
-| **Ollama (local)** | `qwen2.5-audio` | 🔬 Architecturally compatible, not yet tested |
-| **vLLM / LiteLLM** | any compatible | 🔬 Architecturally compatible, not yet tested |
-
-> Leaving the token **empty** in the Captive Portal disables the `Authorization` header automatically, enabling local servers (Ollama, vLLM) that require no authentication.
-
-### Architecture A — Direct to Public Cloud
-
-```
-ESP32-S3
-    │  POST /v1/chat/completions  (WAV in base64, stream:true)
-    ▼
-Cloud Provider API  (OpenAI · Groq · Together.ai · ...)
-    │  SSE streaming response
-    ▼
-Response displayed on screen in real time
-```
-
-### Architecture B — Private Gateway + Own LLM (zero data leakage)
-
-For providers with a different API format (Anthropic, Gemini, DeepSeek) or to run your own fully private LLM:
-
-```
-ESP32-S3
-    │  POST /v1/chat/completions  (same format, always)
-    ▼
-Your Private Gateway  (FastAPI · LiteLLM · custom)
-    │  1. Extracts WAV from base64
-    │  2. Local Whisper (open-source, free) → transcription
-    │  3. Sends text to your LLM (Llama, Mistral, fine-tuned model...)
-    │  4. Returns SSE response in OpenAI format
-    ▼
-Response displayed on screen in real time
-```
-
-**Architecture B advantages:** cost per call = **$0**, data stays on your network, firmware unchanged — just update the URL in the Portal.
-
-> 💡 **[LiteLLM](https://github.com/BerriAI/litellm)** is an open-source gateway that translates 100+ providers (Anthropic, Gemini, Cohere...) to the OpenAI format — use it as a ready-made adapter for Architecture B.
-
-> 🧠 **Multiple Profiles and Personalities:** All behavioral instructions configured via the Captive Portal are combined with the hardware-selected expert profile, creating highly specialized agents. Settings are persisted to the MicroSD card via `config.txt`.
-
----
-
-
-## 📱 Two versions, one ecosystem
+| SoC | ESP32-S3 + 8 MB PSRAM | ESP32-P4 + 32 MB PSRAM, Wi-Fi via C6 |
+| Camera | No (external module if you add one) | Yes — OV2710 2 MP |
+| Display | ST7789 SPI + touch | MIPI-DSI + LVGL |
+| Storage | MicroSD over SPI | MicroSD over SDIO 4-bit |
+| Sleep | Deep sleep, wake on button | Not the point of this SKU |
+| Typical kit | ~US$20–35 | ~US$33 |
 
 <div align="center">
 
-### 🟢 ESP32-S3 — The LITE version
+| ![S3](imagens/s3_00.png) | ![S3](imagens/s3_01.png) | ![S3](imagens/s3_03.png) |
+|---|---|---|
 
 <video src="https://github.com/user-attachments/assets/edd8e80d-49d6-43e2-8205-6af94bb31002" controls width="100%" style="max-width: 720px;">
-  <a href="https://github.com/user-attachments/assets/edd8e80d-49d6-43e2-8205-6af94bb31002">▶ Watch S3 video demo</a>
+  <a href="https://github.com/user-attachments/assets/edd8e80d-49d6-43e2-8205-6af94bb31002">S3 demo</a>
 </video>
 
-> *Cutting-edge firmware: Fluid response, Deep Sleep, and intelligent RMS filtering.*
-
-| ![S3 - View 1](imagens/s3_00.png) | ![S3 - View 2](imagens/s3_01.png) | ![S3 - View 3](imagens/s3_03.png) |
+| ![P4](imagens/p4_00.png) | ![P4](imagens/p4_01.png) | ![P4](imagens/p4_02.png) |
 |---|---|---|
 
 </div>
- 
-**Hardware:** ESP32-S3 kits (e.g., ESP32-S3-Touch-LCD) starting at **~US$20**
- 
-- 🔋 **Optimized Battery**: Native Deep Sleep (< 10 µA), lasts for days. Instant Wake-on-Button.
-- 🎙️ **Refined Processing**: Advanced firmware with high-pass RMS audio filtering to reduce noise and improve voice clarity.
-- ⚙️ **Captive Portal**: Configures Wi-Fi, AI credentials (token, URL, model), and expert profiles dynamically — no USB cable needed.
-- ⚡ **High Robustness**: Asynchronous management with `FreeRTOS Queues` and optimized use of 8MB `PSRAM`.
-- 💾 **Local Persistence**: Records WAVs and chat logs to SD Card (Opportunistic Saving).
-- 👕 **Ultra Portable**: Ideal for pocket assistants, wearables, or smart badges.
 
-> 🌐 **Intuitive Configuration**: The Captive Portal saves all settings to `/sdcard/data/config.txt` on the SD card and restarts the device automatically.
-> ![Captive Portal S3](imagens/Captive%20Portal.png)
- 
----
- 
-<div align="center">
-
-### 🔵 ESP32-P4-EYE — The PRO version
-
-| ![P4 - View 1](imagens/p4_00.png) | ![P4 - View 2](imagens/p4_01.png) | ![P4 - View 3](imagens/p4_02.png) |
-|---|---|---|
-
-</div>
- 
-**Hardware:** ESP32-P4 + OV2710 (2MP) + MIPI-DSI Display + Wi-Fi C6 Co-processor
- 
-- 📷 **Computer Vision**: 2MP camera with hardware ISP for automatic color and exposure.
-- 🖥️ **MIPI Performance**: High-resolution display via DSI bus (fluid LVGL).
-- 🌐 **Wi-Fi Sovereignty**: Connectivity via ESP32-C6 (ESP-Hosted) for maximum stability.
-- 💾 **SDIO 4-Bit**: Massive high-speed storage for photos and videos.
-- ⚙️ **Modularity**: Ideal for kiosks, fixed stations, or robots that require vision.
- 
----
- 
-### Physical Version Comparison
- 
-| Feature | ESP32-S3 (Lite) | ESP32-P4-EYE (Pro) |
-|---|---|---|
-| **Focus** | **Portability / Battery** | **Vision / Performance** |
-| **Integrated Camera** | ❌ (Depends on external module) | ✅ 2 Megapixels |
-| **LVGL Interface** | ✅ ST7789 / SPI | ✅ High Performance / MIPI-DSI |
-| **SD Storage** | ✅ Optimized / SPI | ✅ High Speed / SDIO 4-Bit |
-| **Wi-Fi** | Native Internal STA | Via Auxiliary C6 (ESP-Hosted)|
-| **Optimized Battery** | ✅ Native Deep Sleep (< 10 µA) | ❌ |
+S3 is the wearable-shaped device: push-to-talk, 8 kHz capture, high-pass filter, opportunistic WAV/chat save, then deep sleep. P4 is the vision SKU: voice + photo. Same product idea; two board support packages. The C trees are still separate — do not assume every S3 feature is already on the P4, or the reverse.
 
 ---
 
-##   Possible Real-World Use Cases (and where the money is)
+## What you configure in the field
 
-```
-🏭 Industry 4.0
-   → Hands-free operator consults manuals by voice and component photo
-   → ROI: eliminates ~2h/day downtimes for searching technical documentation
+Hold the record button + profile control for ~10 s (S3) or BTN2 + BTN3 (P4). Join `Assistant-Config-S3` / `Assistant-Config-P4` (no password). Open [http://192.168.4.1](http://192.168.4.1). Wi-Fi, token, URL, model, personality, and up to six specialist profiles are written to `/sdcard/data/config.txt`. The device reboots. No USB, no recompile.
 
-  Healthcare
-   → Smart badge transcribes consultations directly into medical records
-   → ROI: reduces ~40% of administrative filling time
+![Captive Portal — model set to gpt-audio-mini](imagens/Captive%20Portal.png)
 
-🏗️ Construction
-   → Identifies materials and quantifies by photo, generates reports by voice
-   → ROI: accelerates inspections and surveys from hours to minutes
+Leave the token empty to drop the `Authorization` header (Ollama, vLLM, a local gateway).
 
-🌾 Agriculture
-   → Field device identifies pests and diseases by plant photo
-   → ROI: immediate diagnosis without waiting for a specialized technician
+### Models — what actually ran on hardware
 
-🔒 Corporate Security
-   → Real-time scene analysis without sending images to public cloud
-   → ROI: LGPD/GDPR compliance without giving up advanced AI
+The wire format is OpenAI Chat Completions with `input_audio` (WAV in base64) and SSE streaming. Preview names die; the portal is how you survive that.
 
-  Automotive / Logistics
-   → Voice onboard assistant without screen, without cable, minimal consumption
-   → ROI: hands-free for drivers with automated checklist
+| Model | Status |
+|---|---|
+| `gpt-audio-mini` | Tested on S3 (Aug 2026). Current default to put in the portal. |
+| `gpt-audio-1.5` | Same family; use if you want the larger audio model. |
+| `gpt-4o-mini-audio-preview` / `gpt-4o-audio-preview` | **Retired by OpenAI (May 2026).** A device still holding these names gets HTTP 404. Change the model in the portal. |
+| Groq, Ollama, LiteLLM, anything `/v1/chat/completions` | Compatible on paper. **Not validated on this hardware yet.** Open an issue with the `provider-test` tag if you try. |
 
-👕 Wearables & Consumer
-   → Smart glasses, smartwatch, personal pocket assistant
-   → ROI: US$186 billion market in wearable devices (2027)
-
-🎓 Active Learning — Children, Students & Diverse Profiles
-   → Pocket tutor that adapts its language and pace to the learner's level
-   → Asks questions back instead of just answering — promotes retention, not dependency
-   → ROI: personalized Socratic tutoring at US$20 hardware — no monthly EdTech subscription
-```
-## 🧠 Expert-on-Device — The Concept that Changes Everything
-
-<div align="center">
-
-![Expert-on-Device — Multi-contextual physical assistant with native professional profiles](imagens/Expert_on_Device.jpeg)
-
-</div>
-
-**Expert-on-Device** is the core idea that differentiates this project from a simple "button that calls ChatGPT".
-
-Instead of a generic assistant, the device **changes its behavior** according to the configured profile — like having a dedicated specialist for each use context. 
-
-### 1. Human Personas
-The simplest application is acting as a domain specialist:
-
-| Profile | The device behaves like... | Usage Example |
-|---|---|---|
-| 🌾 **Agro** | Field agronomist | *"What are the best nutrients for tomatoes?"* — responds with dosage, timing, visual symptoms |
-| 🎓 **Teacher** | Personalized tutor | *"Explain photosynthesis"* — adapts language to the student's level |
-| 🗂️ **Meeting** | Executive secretary | *"Summarize what was decided"* — transcribes and synthesizes into bullet points |
-| ⚙️ **Engineer** | Technical specialist | *"What is this component?"* (photo) — identifies and describes specifications |
-| 🩺 **Health** | Clinical aide | *"Record: patient reports pain for 3 days"* — formats for medical records |
-| 🔧 **General** | All-purpose assistant | Everyday use without specific context |
-
-### 2. Ubiquity of Intelligence (The "Thing" that Thinks)
-The true disruptive vision of EoD is moving the "expert" from a human figure to an **inanimate object**. It gives "technical consciousness" to raw matter, removing the barrier between raw data and actionable insights. The object itself becomes the specialist:
-
-| Object | The "Thing" behaves like... | System Prompt / Context Example |
-|---|---|---|
-| 🏃 **Smart Treadmill**| Biomechanics expert | *"You are a smart treadmill. If user starts: 'Let's keep 6km/h to warm up'. During workout: 'Careful, you are putting too much pressure on your right heel.'"* |
-| 🧊 **Refrigerator** | Nutritionist | *"You are a smart refrigerator. I see eggs and tomatoes. Let's make an omelet? You need 20g of protein to reach your daily goal."* |
-| 🪖 **PPE Helmet** | Safety Engineer | *"You are a safety helmet. Warning: high risk of fall without harness ahead. Report logged to SD card."* |
-
-When the "thing" is the expert, intelligence becomes **contextual and passive**. You don't need to open an app; the treadmill feels your speed and sees your posture. A local gym can offer an elite personal trainer on every treadmill without increasing monthly fees, powered by an underlying ~$33 ESP32 processing audio and vision privately on the Edge.
-
-### Why is this revolutionary?
-
-> Today, a doctor pays US$500/month for a transcription app. An agronomist flies for hours to give a field diagnosis. An engineer opens 800-page manuals to identify a failure.
->
-> **With ~US$20-33 of hardware and this firmware, any professional carries the specialist in their pocket — no mandatory platform subscription (just API token or free local on-premise), no cameras sending images to third-party servers (via private gateway).**
-
-### How profiles work technically
-
-Profiles are **system prompts** stored in `/sdcard/data/config.txt` on the SD card, loaded at startup. Change profiles via the Captive Portal — **no firmware recompilation needed**.
-
-```json
-{
-  "ai": {
-    "token": "sk-...",
-    "base_url": "https://api.openai.com/v1/chat/completions",
-    "model": "gpt-4o-audio-preview",
-    "personality": "You are an agronomist specialized in tropical horticulture...",
-    "profiles": {
-      "general": { "name": "Geral", "prompt": "...", "terms": "..." }
-    }
-  },
-  "wifi": { "ssid": "MyNetwork", "password": "..." }
-}
-```
-
-> The Captive Portal maps these fields respectively: "Personalidade" edits the personality string, "Perfis" edits the individual prompt blocks, etc.
-
-Want a fully customized profile for your business? Configure it via the Captive Portal directly in the field.
+Cloud is Architecture A (default). Architecture B is your own gateway: same POST from the ESP32, Whisper + LLM on your network, OpenAI-shaped SSE back. Firmware unchanged; you only edit the URL. Local inference is not free — it costs your GPU and your time — but the audio never has to leave the building.
 
 ---
 
-## 🚀 The Firmware as a Portable "Brain"
+## Expert-on-Device
 
-The project's modular architecture allows the same logic — media capture, AI orchestration, and profile management — to be embedded in different form factors:
+The device is not a generic chatbot. A **profile** is a system prompt on the SD card (agronomist, tutor, engineer, a UnB digital-electronics lab assistant, …). The Captive Portal screenshot above is a real config: four profiles, Portuguese personality, `gpt-audio-mini`.
 
-- **👓 Smart Glasses** — Embedded ESP32-S3 processes what the user sees in real time, responding via audio. Ideal for the Engineer profile in hands-free industrial maintenance.
-- **⌚ Smartwatch / Wearables** — The low power consumption and small size of the S3 enable wearable devices for health or security, with Edge AI directly on the wrist.
-- **⛑️ Smart Helmets and PPE** — The "Expert" profile integrated into a construction helmet can identify hazards by photo and alert the worker via local audio, without depending on a network.
+That is what ships today.
 
-> The hardware changes. The firmware stays the same.
+The longer idea — a treadmill that *is* a biomechanics coach, a helmet that *is* a safety engineer — is OEM: this firmware plus **the object’s own sensors**. This repository does not include a speed encoder or a heel-pressure insole. The persona mechanism is here; the rest of the machine is the customer’s.
+
+Where this is a better tool than a phone: factory floor, field agriculture, inspection, embedding inside a product. Where it is not: competing with the smartphone you already carry, or claiming a US$186B wearable TAM.
 
 ---
 
-## ⚡ Quick Start (5 minutes)
+## Quick start
 
-### Prerequisites
-- [ESP-IDF v5.5.1](https://docs.espressif.com/projects/esp-idf/en/stable/esp32p4/get-started/)
-- Hardware: **ESP32-P4-EYE** or any **ESP32-S3** board with microphone
-- Account with any AI provider with an OpenAI-compatible REST API (OpenAI, Groq, or self-hosted via Ollama/vLLM)
+Needs [ESP-IDF v5.5.1](https://docs.espressif.com/projects/esp-idf/en/v5.5.1/esp32s3/get-started/index.html). An older IDF on the PATH will still *monitor* a board that was flashed with 5.5.1; do not re-flash from a mismatched tree if you want the binary you already validated.
 
-| Hardware | Where to buy | Price (reference) |
-|---|---|---|
-| **ESP32-S3 Lite** with mic | [AliExpress](https://aliexpress.com) | **~US$20–35** |
-| **ESP32-P4-EYE Pro** | [DigiKey](https://www.digikey.com/en/products/detail/espressif-systems/ESP32-P4-EYE/26648584) | **~US$33** |
-| **ESP32-S3-BOX-3** (Espressif) | [DigiKey](https://www.digikey.com) / [Mouser](https://mouser.com) | **~US$40** (display + mic + speaker included) |
-| INMP441 Microphone (S3 add-on) | [AliExpress](https://aliexpress.com) | **~US$2–5** |
-
-### 1. Clone and configure
 ```bash
-git clone https://github.com/marcelinoandrade/assistente-de-IA.git # Core repo for ExpertOnDevice-AI
-cd assistente-de-IA
-
-# Copy the credentials template (used for initial firmware compilation)
-cp firmware/esp32_p4_firmware/components/bsp/include/secret.h.example \
-   firmware/esp32_p4_firmware/components/bsp/include/secret.h
-
-# Edit secret.h with your editor and fill in:
-# SECRET_WIFI_SSID, SECRET_WIFI_PASS, SECRET_OPENAI_API_KEY
-```
-
-> Note: While `secret.h` configures the initial build, all keys and Wi-Fi can be dynamically changed later in the field through the Captive Portal without recompiling.
-
-### 2. Build and flash (P4)
-```bash
-cd firmware/esp32_p4_firmware
-
-# Windows
-. ..\..\..\..\activate_esp_idf.ps1
-
-# Linux/Mac
+git clone git@github.com:marcelinoandrade/ExpertOnDevice-AI.git
+cd ExpertOnDevice-AI
 . $HOME/esp/esp-idf/export.sh
 
-idf.py -p COM12 build flash monitor   # Windows
-idf.py -p /dev/ttyUSB0 build flash monitor  # Linux
+# S3 Lite (native USB usually /dev/ttyACM0 on Linux, COMx on Windows)
+cd firmware/esp32_s3_firmware
+idf.py -p /dev/ttyACM0 build flash monitor
+
+# P4-EYE
+# cd firmware/esp32_p4_firmware
+# cp components/bsp/include/secret.h.example components/bsp/include/secret.h
+# idf.py -p /dev/ttyUSB0 build flash monitor
 ```
 
-### 3. ⚙️ Zero-Touch Configuration (Captive Portal)
-> No need to recompile! Perfect for field deployment.
+`secret.h` is only a compile-time fallback. After first boot, the Captive Portal owns Wi-Fi, token, URL, and model.
 
-1. **Hold the recording button (e.g., BOOT/Encoder) + touch the profile button (M) for 10 seconds** (S3) or **hold BTN2 + BTN3 for 10 seconds** (P4)
-2. Connect to the `Assistant-Config-S3` (S3) or `Assistant-Config-P4` (P4) Wi-Fi (no password)
-3. Open the browser at `http://192.168.4.1`
-4. Fill in SSID, Password, Token and AI URL — the device restarts automatically
+**Use:** hold the encoder / record button, speak, release, wait. On the P4, Photo+Voice is a second mode (knob + capture, then hold to ask about the picture).
 
-### 4. How to use
-```
-🟢 Voice Mode (default)
-   → Hold the ENCODER → Speak → Release → Wait for response
-
-📷 Photo+Voice Mode
-   → Turn the KNOB to select "Photo+Voice" mode
-   → Press BOOT/BTN1 to capture a photo
-   → Hold ENCODER (recording button) → Ask your question about the photo → Release
-```
+**SD layout:** `/sdcard/media/audio/*.wav`, `/sdcard/media/images/*.jpg`, `/sdcard/logs/chat/*.txt`, `/sdcard/data/config.txt`.
 
 ---
 
-## 🗂️ What is saved on the SD Card
+## What we measured (not a datasheet)
 
-```
-/sdcard/
-├── media/
-│   ├── images/   → IMG_20260222_143052.jpg  (captured photos)
-│   └── audio/    → REC_20260222_143052.wav  (recorded audio)
-├── logs/
-│   └── chat/     → CHAT_20260222.txt        (daily conversation log)
-└── data/
-    └── config.txt                            (your active expert profiles and settings)
-```
+From serial logs on real boards — [S3 log](docs/log_tecnico_s3.md) (Mar 2026, 8 kHz) and [P4 log](docs/log_tecnico_p4.md). Different chips; do not mix the rows.
 
----
-
-## 🏗️ Architecture
-
-```
-┌──────────────────────────────────────────────────────────┐
-│                    ESP32-P4 (Host)                       │
-│                                                          │
-│  ┌──────────────┐  ┌──────────┐  ┌──────────────────┐  │
-│  │    app.c     │  │  gui.c   │  │     bsp.c        │  │
-│  │  Logic +     │  │  LVGL +  │  │  Camera ISP +    │  │
-│  │  2 Modes     │  │  Scroll  │  │  Audio PDM +     │  │
-│  └──────┬───────┘  └──────────┘  │  SD + Wi-Fi      │  │
-│         │                        └─────────┬────────┘  │
-│  ┌──────▼───────────────┐                  │           │
-│  │    app_storage.c     │        ┌──────────▼───────┐  │
-│  │  config_manager.c    │        │   ESP32-C6       │  │
-│  │  captive_portal.c    │        │ Wi-Fi C6 Co-processor│
-│  │                      │        │   SDIO 4-bit     │  │
-│  └──────────────────────┘        └──────────┬───────┘  │
-│          │                                  │           │
-│      SD Card                             Internet       │
-│   (photos/audio/logs)                       │           │
-└─────────────────────────────────────────────┼───────────┘
-                                              │
-                               ┌──────────────▼──────────────┐
-                               │    Any LLM via API          │
-                               │  OpenAI • Claude • Groq     │
-                               │  Llama • Gemini • Ollama    │
-                               └─────────────────────────────┘
-```
-
-**Value Flow:**
-```
-User → [Voice + Optional Photo]
-     → ESP32 captures and processes
-     → Sends to the LLM of your choice
-     → Receives text response
-     → Displays on screen + saves to SD
-     → User obtains actionable insights ✅
-```
-
----
-
-## 📈 Performance and Stability (Real Logs)
-
-> No made-up benchmarks. These are numbers measured on real hardware.
-
-| Metric | Measured Value |
-|---|---|
-| ⏱️ Full boot (all peripherals) | **~10 seconds** |
-| 🧠 Available PSRAM | **32 MB** (P4, AP HEX) / **8 MB** (S3) |
-| 🎙️ Audio chunk | 3,840 bytes / 120ms (16kHz, 16-bit) |
-| 📷 Captured JPEG | 14–15 KB (240×240px, validated) |
-| 💾 WAV recording to SD | **< 300ms** after AI response |
-| 🔧 Captive Portal activation | **~2.5 seconds** |
-| 🔋 DHCP for AP client | **~200ms** (IP 192.168.4.2 confirmed) |
-| 🌐 End-to-end latency (voice→response→save) | **~5–8 seconds** |
-
-👉 **[See full log analysis for ESP32-S3 Lite →](docs/log_tecnico_s3.md)**  
-👉 **[See full log analysis for ESP32-P4-EYE Pro →](docs/log_tecnico_p4.md)**
-
----
-
-## 📋 Features
-
-- [x] **Robust Push-to-Talk**: Starts on hardware falling edge and ends on rising edge deterministically. The last AI response actively persists on the display for the user.
-- [x] **Voice** mode (audio only) and **Photo+Voice** mode (camera + audio simultaneously).
-- [x] **Dynamic Base URL, Token and Model**: Switch providers and LLMs via Captive Portal with no recompilation. Token field accepts empty value for local servers (Ollama, vLLM). Supports direct cloud (Architecture A) or private gateway + own LLM (Architecture B).
-- [x] **Combined Expert Mode**: Integrate custom personalities via SD Card with hardware-selectable profiles.
-- [x] **Zero-Touch Captive Portal**: Quick Wi-Fi, AI Token, Model, and System Prompt configuration via Web Browser.
-- [x] **Event-Driven Architecture & Advanced PSRAM**: Intensive use of isolated Tasks (`FreeRTOS`), Mutex on SPI bus to protect local logging from GUI/SD slowdowns, and secure offline saving system (`Opportunistic Saving`).
-- [x] **Conversation History (Multi-turn)**: PSRAM retains dynamic options in the "context window". The device remembers what you reported moments before.
-- [x] Robust SD Card: Saves photos (`IMG_*.jpg`), PCM audio converted to perfect WAV (`REC_*.wav`), and interaction transcripts (`CHAT_*.txt`).
-- [x] SNTP with internal clock (Exact timestamp for all SD records).
-- [x] Long File Names in FATFS.
-- [x] Responsive LVGL interface and Intelligent Battery Management via optimized **Deep Sleep** (Microamp standby timer and button Wakeup).
-- [x] Integrated DNS server in AP-Mode for immediate Web Portal pop-up.
-- [ ] Locally integrated offline TTS (Text-to-Speech) — *planned*
-- [ ] Native local wake word (replacing continuous physical button use) — *planned*
-- [ ] Optional Companion Apps and BLE Platforms — *planned*
-- [ ] **OTA (Over-The-Air)** — Updating the embedded system and custom models wirelessly, via Cloud — *planned*
-
----
-
-## 📄 License
-
-### 🆓 Non-Commercial Use — FREE forever
-
-For **personal, educational, academic research, and open-source projects**:
-
-**[Creative Commons Attribution-NonCommercial-ShareAlike 4.0 (CC BY-NC-SA 4.0)](LICENSE)**
-
-✅ You can use, modify, and distribute freely  
-✅ Research, theses, personal prototypes, makers  
-✅ Schools, universities, communities  
-📌 Requires attribution to the original project  
-📌 Modifications must use the same license  
-
----
-
-### 💼 Commercial Use — License Required
-
-For **products for sale, SaaS, OEM, corporate integration, or resale**:
-
-| Type | For whom | Price |
+| | ESP32-S3 Lite | ESP32-P4-EYE |
 |---|---|---|
-| 🏠 **Individual / Startup** | Own product, up to 100 units | *Contact us* |
-| 🏢 **Company / OEM** | Integration into commercial product | *Contact us* |
-| 🏭 **Enterprise** | Volume, SLA, dedicated support | *Contact us* |
+| Ready (`app_main` / full bring-up) | ~1.5 s to app start; Wi-Fi IP ~3 s from power-on | ~10 s all peripherals |
+| PSRAM | 8 MB octal, 80 MHz | 32 MB |
+| Capture | 8 kHz, 16-bit mono, 100 ms windows | 16 kHz, 16-bit, 120 ms chunks |
+| Voice → text on screen | ~4–8 s after release (network + API) | ~5–8 s end-to-end including save |
+| Deep sleep current | Estimated; lab figure not published. Backlight is held LOW. | Not the design goal |
 
-> **📧 [Request Commercial License](mailto:mrclnndrd@gmail.com)**
-> 
-> Includes: use in closed product, no attribution obligation, priority support.
-
-**Examples of uses that require a license:**
-- Physical product with this firmware for sale
-- Paid service (SaaS, subscription) based on this system  
-- Customization for clients for payment
-- Integration into corporate or industrial solutions
+The S3 path: I2S → PSRAM PCM → 100 Hz high-pass → WAV/base64 → HTTPS SSE → LVGL. HTTP client is kept alive across turns. SD writes wait until the radio is idle.
 
 ---
 
-## 🌟 Community & Showcase
+## Honest backlog
 
-**Built something with this project?** Open an [Issue with the `showcase` tag](../../issues) and show it to the world!
+Done: push-to-talk, Captive Portal, SD audit trail, multi-turn history in PSRAM, SNTP timestamps, S3 deep sleep, P4 camera mode.
 
-Community projects will appear here and on the project's social media.
+Not done: on-chip TTS, wake-word, OTA, BLE companion, a shared `app/` between S3 and P4, encrypted tokens on the SD card. The P4 audio path still has a hardcoded preview-model fallback in C — set the model in the portal anyway.
 
 ---
 
-## 🤝 Contributing
+## License
+
+**Non-commercial** (personal, school, research): [CC BY-NC-SA 4.0](LICENSE) — use, fork, attribute, share alike.
+
+**Commercial** (product for sale, OEM, SaaS, paid integration): separate license — [mrclnndrd@gmail.com](mailto:mrclnndrd@gmail.com). The business is the firmware and the profiles, not a US$25 board with a 4-dollar margin.
+
+---
+
+## Contributing
+
+Useful PRs: validate a non-OpenAI provider (`provider-test` issue with URL, model, HTTP status), OTA, shared S3/P4 core, local TTS, S3 camera. Showcase builds: open an issue tagged `showcase`.
 
 ```bash
-# Fork → Clone → Branch → Code → PR
-git checkout -b feature/local-wake-word
-git commit -m "feat: add offline wake word detection"
-git push origin feature/local-wake-word
-# Open a Pull Request!
-```
-
-Areas where contributions are especially welcome:
-- 🤖 **Test provider compatibility** — The firmware is architecturally ready for multiple providers but **only OpenAI has been validated**. See the guide below.
-- 🔗 **Bring Pro (Vision) functionality to the ESP32-S3** (feature currently available for ESP32-P4)
-- 📡 **OTA (Over-The-Air)**: firmware update over Wi-Fi — no USB cable needed in the field
-- 🔊 TTS (local voice synthesis)
-- 📱 Companion app (BLE/Wi-Fi)
-- 🌍 README translations
-
-### 🧪 Guide: Testing a New LLM Provider
-
-> The firmware sends a fixed OpenAI-format payload with WAV audio in base64. Any provider that accepts this format should work without code changes.
-
-**Steps to validate a new provider:**
-
-1. **Enter Configuration Mode** (hold button to open Captive Portal)
-2. **Set the fields:**
-   - `URL Base da IA` → provider's `/v1/chat/completions` endpoint
-   - `Token / Chave de API` → your provider's API key (or leave empty for local servers)
-   - `Modelo da IA` → e.g. `llama-3.3-70b-versatile` (Groq), `qwen2.5-audio` (Ollama)
-3. **Trigger an interaction** and observe the serial monitor output (`idf.py monitor`)
-4. **Check the serial log** for:
-   - HTTP status code (should be `200`)
-   - SSE chunks arriving (`data: {"choices":[...]}`)
-   - Extracted text appearing on screen
-5. **Report results** in a GitHub Issue with the `provider-test` tag, including:
-   - Provider name and model
-   - Exact base URL used
-   - Whether it worked, and any error messages from the serial monitor
-
-**For local servers (Ollama):**
-```bash
-# Install and run Ollama with an audio-capable model
-ollama pull qwen2.5:audio
+# Ollama (untested here) — token empty in the portal
 ollama serve
-# Set URL in portal: http://<your-PC-IP>:11434/v1/chat/completions
-# Leave token empty
+# URL: http://<pc>:11434/v1/chat/completions
 ```
-
-**For LiteLLM gateway (Anthropic, Gemini, DeepSeek, etc.):**
-```bash
-pip install litellm
-litellm --model anthropic/claude-3-5-sonnet --port 8000
-# Set URL in portal: http://<your-PC-IP>:8000/v1/chat/completions
-# Set token: your Anthropic API key
-```
-
----
-
-## ⭐ If this project impressed you, leave a star and share!
-
-> *Every star helps this project reach more makers, researchers, and companies that can benefit from accessible embedded AI.*
-
----
 
 <div align="center">
 
-**🇧🇷 Made in Brazil | ESP32 AI Assistant**
-
-[⭐ Star](../../stargazers) · [🐛 Issues](../../issues) · [💼 Commercial License](mailto:mrclnndrd@gmail.com) · [🤝 Contribute](../../pulls)
+**Made in Brazil** · [Star](../../stargazers) · [Issues](../../issues) · [Commercial license](mailto:mrclnndrd@gmail.com)
 
 </div>
